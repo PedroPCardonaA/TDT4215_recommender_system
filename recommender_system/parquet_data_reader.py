@@ -6,13 +6,17 @@ class ParquetDataReader:
     """
 
     def __init__(self):
+        """
+        Initialize the ParquetDataReader without requiring arguments.
+        """
         pass
-
-
 
     def read_data(self, path: str) -> pd.DataFrame:
         """
         Read the Parquet file and return the DataFrame.
+
+        Args:
+            path (str): Path to the Parquet file.
 
         Returns:
             pd.DataFrame: The DataFrame containing the Parquet data.
@@ -22,3 +26,4 @@ class ParquetDataReader:
             return df
         except Exception as e:
             raise ValueError(f"Failed to read the Parquet file: {e}")
+
