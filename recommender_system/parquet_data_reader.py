@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 
 class ParquetDataReader:
     """
@@ -11,7 +11,7 @@ class ParquetDataReader:
         """
         pass
 
-    def read_data(self, path: str) -> pd.DataFrame:
+    def read_data(self, path: str) -> pl.DataFrame:
         """
         Read the Parquet file and return the DataFrame.
 
@@ -22,7 +22,7 @@ class ParquetDataReader:
             pd.DataFrame: The DataFrame containing the Parquet data.
         """
         try:
-            df = pd.read_parquet(path)
+            df = pl.read_parquet(path)
             return df
         except Exception as e:
             raise ValueError(f"Failed to read the Parquet file: {e}")
