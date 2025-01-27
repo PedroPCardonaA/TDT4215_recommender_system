@@ -1,2 +1,3 @@
 venv/
 data/document_vector.parquet
+generated_data/
