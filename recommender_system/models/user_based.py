@@ -1,7 +1,8 @@
 import polars as pl
 import numpy as np
 
-class CollaborativeReccomender:
+
+class CollaborativeRecommender:
     def __init__(self, impressions: pl.DataFrame, items: pl.DataFrame, scroll_percentage_weight=1, read_time_weight=1):
         '''
         Initialize the CollaborativeReccomender with a user-item dataframe.
