@@ -161,7 +161,7 @@ class CollaborativeRecommender:
         )
 
         # Aggregate scores for each article
-        article_scores = similar_user_articles.groupby("article_id").agg(
+        article_scores = similar_user_articles.group_by("article_id").agg(
             pl.col("impression_score").sum().alias("total_score")
         )
 
