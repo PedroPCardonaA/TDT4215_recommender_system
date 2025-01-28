@@ -40,24 +40,18 @@ class CollaborativeRecommender:
         float
             The cosine similarity score between the two vectors. Ranges from -1 to 1.
         '''
-        # Compute dot product
-        dot_product = np.dot(user1_score, user2_score)
-        
-        # Compute norms
         norm_u = np.linalg.norm(user1_score)
         norm_v = np.linalg.norm(user2_score)
-        
-        # Handle division by zero (return 0 if either vector is zero)
+
+        # Handle division by zero
         if norm_u == 0 or norm_v == 0:
             return 0.0
-        
-        # Calculate cosine similarity
-        return dot_product / (norm_u * norm_v)
+
+        return np.dot(user1_score, user2_score) / (norm_u * norm_v)
 
     def add_impression_scores(self) -> pl.DataFrame:
         '''
-        Creates a score based on the user's behavior (scroll percentage and read time). Using the formula:
-        impression_score = (scroll_percentage * scroll_percentage_weight) + (read_time * read_time_weight)
+        Adds an impression score column to the `impressions` DataFrame.
 
         Returns
         -------
@@ -71,7 +65,7 @@ class CollaborativeRecommender:
             ).alias("impression_score")
         )
         return self.impressions
-    
+
     def build_user_similarity_matrix(self):
         '''
         Builds a user-user similarity matrix using cosine similarity based on impression scores.
