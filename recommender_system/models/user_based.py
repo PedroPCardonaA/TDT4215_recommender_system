@@ -39,6 +39,36 @@ class CollaborativeReccomender:
         )
         return self.impressions
 
+    def cosine_similarity(self, user1_score: np.ndarray, user2_score: np.ndarray) -> float:
+        '''
+        Calculate the cosine similarity between two vectors.
+
+        Parameters
+        ----------
+        user1_score : np.ndarray
+            A numpy array representing the behavior of user 1.
+        user2_score : np.ndarray
+            A numpy array representing the behavior of user 2.
+
+        Returns
+        -------
+        float
+            The cosine similarity score between the two vectors. Ranges from -1 to 1.
+        '''
+        # Compute dot product
+        dot_product = np.dot(user1_score, user2_score)
+        
+        # Compute norms
+        norm_u = np.linalg.norm(user1_score)
+        norm_v = np.linalg.norm(user2_score)
+        
+        # Handle division by zero (return 0 if either vector is zero)
+        if norm_u == 0 or norm_v == 0:
+            return 0.0
+        
+        # Calculate cosine similarity
+        return dot_product / (norm_u * norm_v)
+
     def fit(self):
         '''
         Creates a user-user cosine similarity matrix and uses this to 
