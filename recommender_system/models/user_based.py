@@ -72,7 +72,38 @@ class CollaborativeReccomender:
         return self.impressions
     
     def build_user_similarity_matrix(self):
-        self.user_similarity_matrix = []
+        '''
+        Builds a user-user similarity matrix using cosine similarity based on impression scores.
+
+        The matrix is stored as a dictionary of dictionaries where keys are user IDs
+        and values are their similarity scores with other users.
+        '''
+        # Pivot the data to create a user-item matrix
+        user_item_matrix = self.impressions.pivot(
+            values="impression_score",
+            index="user_id",
+            columns="item_id",
+            aggregate_function="mean"
+        ).fill_nan(0)
+
+        # Convert to a numpy array for efficient operations
+        user_ids = user_item_matrix.select("user_id").to_series().to_numpy()
+        scores_matrix = user_item_matrix.drop("user_id").to_numpy()
+
+        # Initialize similarity matrix
+        num_users = len(user_ids)
+        similarity_matrix = np.zeros((num_users, num_users))
+
+        # Compute cosine similarity between all pairs of users
+        for i in range(num_users):
+            for j in range(num_users):
+                similarity_matrix[i, j] = self.cosine_similarity(scores_matrix[i], scores_matrix[j])
+
+        # Store as a dictionary for easy lookup
+        self.user_similarity_matrix = {
+            user_ids[i]: {user_ids[j]: similarity_matrix[i, j] for j in range(num_users)}
+            for i in range(num_users)
+        }
         return self.user_similarity_matrix
 
     def fit(self):
