@@ -77,27 +77,25 @@ class CollaborativeRecommender:
         user_item_matrix = self.impressions.pivot(
             values="impression_score",
             index="user_id",
-            columns="item_id",
+            columns="article_id",
             aggregate_function="mean"
         ).fill_nan(0)
 
-        # Convert to a numpy array for efficient operations
-        user_ids = user_item_matrix.select("user_id").to_series().to_numpy()
+        # Get user IDs and scores as numpy arrays
+        user_ids = user_item_matrix["user_id"].to_numpy()
         scores_matrix = user_item_matrix.drop("user_id").to_numpy()
 
-        # Initialize similarity matrix
-        num_users = len(user_ids)
-        similarity_matrix = np.zeros((num_users, num_users))
+        # Calculate similarity matrix
+        norm_matrix = np.linalg.norm(scores_matrix, axis=1, keepdims=True)
+        norm_matrix[norm_matrix == 0] = 1  # Prevent division by zero
+        normalized_matrix = scores_matrix / norm_matrix
 
-        # Compute cosine similarity between all pairs of users
-        for i in range(num_users):
-            for j in range(num_users):
-                similarity_matrix[i, j] = self.cosine_similarity(scores_matrix[i], scores_matrix[j])
+        similarity_matrix = np.dot(normalized_matrix, normalized_matrix.T)
 
-        # Store as a dictionary for easy lookup
+        # Convert to dictionary for faster lookups
         self.user_similarity_matrix = {
-            user_ids[i]: {user_ids[j]: similarity_matrix[i, j] for j in range(num_users)}
-            for i in range(num_users)
+            user_ids[i]: {user_ids[j]: similarity_matrix[i, j] for j in range(len(user_ids))}
+            for i in range(len(user_ids))
         }
         return self.user_similarity_matrix
 
