@@ -5,7 +5,7 @@ import numpy as np
 class CollaborativeRecommender:
     def __init__(self, impressions: pl.DataFrame, items: pl.DataFrame, scroll_percentage_weight=1, read_time_weight=1):
         '''
-        Initialize the CollaborativeReccomender with a user-item dataframe.
+        Initialize the CollaborativeRecommender with a user-item dataframe.
 
         Parameters
         ----------
@@ -118,34 +118,54 @@ class CollaborativeRecommender:
         if self.user_similarity_matrix is None:
             raise ValueError("User similarity matrix has not been computed. Call `fit` first.")
 
-        # Get similarity scores for the given user
         similarities = self.user_similarity_matrix.get(user_id, {})
 
-        # Sort by similarity score in descending order and return the top n
+        # Sort by similarity score in descending order and return the top n, excluding the user itself
         similar_users = sorted(similarities.items(), key=lambda x: x[1], reverse=True)
-
-        # Exclude the user itself
-        similar_users = [(uid, score) for uid, score in similar_users if uid != user_id]
-
-        return similar_users[:n]
+        return [(uid, score) for uid, score in similar_users if uid != user_id][:n]
 
     def fit(self):
         '''
-        Creates a user-user cosine similarity matrix based on impression scores.
+        Fits the Collaborative Recommender model by building the user similarity matrix.
 
-        Prepares user and item profiles by computing average user feature vectors
-        (user_profiles) and unique item feature vectors (item_profiles).
-        Also calculates norms for each user and item vector to speed up
-        cosine similarity calculations.
+        Returns
+        -------
+        dict
+            The user-user similarity matrix.
         '''
-        # Calculate impression scores for each user-item interaction
         self.add_impression_scores()
+        return self.build_user_similarity_matrix()
 
-        # Build a matrix to see which users are more similar to others
-        self.build_user_similarity_matrix()
+    def recommend_n_articles(self, user_id: int, n: int) -> list[int]:
+        '''
+        Predict the top n articles a user might like based on similar users activity.
 
-        return self.user_similarity_matrix
+        Parameters
+        ----------
+        user_id : int
+            The ID of the user for whom to make predictions.
+        n : int
+            The number of articles to recommend.
 
+        Returns
+        -------
+        list[int]
+            A list of article IDs predicted to be most liked by the user.
+        '''
+        # Get the n most similar users
+        similar_users = [uid for uid, _ in self.get_n_similar_users(user_id, n)]
 
-    def predict(self, user_id: int, article_id: int) -> float:
-            return 0.0
+        # Get articles interacted with by similar users
+        similar_user_articles = self.impressions.filter(
+            pl.col("user_id").is_in(similar_users)
+        )
+
+        # Aggregate scores for each article
+        article_scores = similar_user_articles.groupby("article_id").agg(
+            pl.col("impression_score").sum().alias("total_score")
+        )
+
+        # Sort by scores in descending order and take the top n articles
+        recommended_articles = article_scores.sort("total_score", descending=True).head(n)
+
+        return recommended_articles["article_id"].to_list()
