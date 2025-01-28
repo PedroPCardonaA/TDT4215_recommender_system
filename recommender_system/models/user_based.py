@@ -106,6 +106,36 @@ class CollaborativeReccomender:
         }
         return self.user_similarity_matrix
 
+    def get_n_similar_users(self, user_id: int, n: int) -> list:
+        '''
+        Finds the n most similar users to a given user based on the similarity matrix.
+
+        Parameters
+        ----------
+        user_id : int
+            The ID of the user for whom similar users are being found.
+        n : int
+            The number of similar users to return.
+
+        Returns
+        -------
+        list
+            A list of tuples where each tuple contains a user ID and its similarity score.
+        '''
+        if self.user_similarity_matrix is None:
+            raise ValueError("User similarity matrix has not been computed. Call `fit` first.")
+
+        # Get similarity scores for the given user
+        similarities = self.user_similarity_matrix.get(user_id, {})
+
+        # Sort by similarity score in descending order and return the top n
+        similar_users = sorted(similarities.items(), key=lambda x: x[1], reverse=True)
+
+        # Exclude the user itself
+        similar_users = [(uid, score) for uid, score in similar_users if uid != user_id]
+
+        return similar_users[:n]
+
     def fit(self):
         '''
         Creates a user-user cosine similarity matrix based on impression scores.
