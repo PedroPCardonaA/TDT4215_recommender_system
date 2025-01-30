@@ -11,8 +11,6 @@ class CollaborativeRecommender:
         ----------
         impressions : pl.DataFrame
             A DataFrame containing user interactions with articles.
-        items : pl.DataFrame
-            A DataFrame containing item details (e.g., articles).
         scroll_percentage_weight : float, optional
             The weight for the scroll percentage in the impression score.
         read_time_weight : float, optional
@@ -21,7 +19,7 @@ class CollaborativeRecommender:
         self.impressions = impressions
         self.scroll_percentage_weight = scroll_percentage_weight
         self.read_time_weight = read_time_weight
-        self.user_similarity_matrix = None
+        self.user_similarity_matrix = {}
 
     def cosine_similarity(self, user1_score: np.ndarray, user2_score: np.ndarray) -> float:
         '''
@@ -59,8 +57,8 @@ class CollaborativeRecommender:
         '''
         self.impressions = self.impressions.with_columns(
             (
-                pl.col("scroll_percentage") * self.scroll_percentage_weight +
-                pl.col("read_time") * self.read_time_weight
+                pl.col("max_scroll") * self.scroll_percentage_weight +
+                pl.col("total_readtime") * self.read_time_weight
             ).alias("impression_score")
         )
         return self.impressions
@@ -70,70 +68,33 @@ class CollaborativeRecommender:
         Builds a user similarity matrix using cosine similarity based on impression scores.
         Each user contains the `sim_size` most similar users, sorted by similarity.
 
-        The matrix is stored as a dictionary of lists where keys are user IDs
-        and values are dictionaries of `sim_size` most similar users and their similarity scores.
+        The matrix is stored as a dictionary of lists where the keys are user IDs
+        and the values in the lists are `sim_size` instances of the most similar users, sorted by similarity.
         '''
-        # Pivot the data to create a user-item matrix
+        # Pivot to create user-item matrix
         user_item_matrix = self.impressions.pivot(
             values="impression_score",
             index="user_id",
-            columns="article_id",
-            aggregate_function="mean"
-        ).fill_nan(0)
+            columns="article_id"
+        ).fill_null(0)  # Replace NaNs with 0
 
-        # Get user IDs and scores as numpy arrays
-        user_ids = user_item_matrix["user_id"].to_numpy()
-        scores_matrix = user_item_matrix.drop("user_id").to_numpy()
+        user_ids = user_item_matrix["user_id"].to_list()
+        user_vectors = user_item_matrix.drop("user_id").to_numpy()
 
-        # Normalize user vectors to compute cosine similarity
-        norm_matrix = np.linalg.norm(scores_matrix, axis=1, keepdims=True)
-        norm_matrix[norm_matrix == 0] = 1  # Prevent division by zero
-        normalized_matrix = scores_matrix / norm_matrix
+        # Compute pairwise cosine similarity
+        similarity_matrix = {}
+        for i, user_id in enumerate(user_ids):
+            similarities = []
+            for j, other_user_id in enumerate(user_ids):
+                if user_id != other_user_id:
+                    sim = self.cosine_similarity(user_vectors[i], user_vectors[j])
+                    similarities.append((other_user_id, sim))
 
-        # Compute similarity matrix
-        similarity_matrix = np.dot(normalized_matrix, normalized_matrix.T)
+            # Store top `sim_size` most similar users
+            similarity_matrix[user_id] = sorted(similarities, key=lambda x: x[1], reverse=True)[:sim_size]
 
-        # Store only the top `sim_size` most similar users per user
-        self.user_similarity_matrix = {}
-        for i, user in enumerate(user_ids):
-            # Get similarity scores for this user, excluding itself
-            similar_users = [
-                (user_ids[j], similarity_matrix[i, j]) 
-                for j in range(len(user_ids)) if i != j
-            ]
-            # Sort by similarity and keep only the top `sim_size`
-            similar_users = sorted(similar_users, key=lambda x: x[1], reverse=True)[:sim_size]
-            
-            # Store as dictionary mapping user -> top similar users
-            self.user_similarity_matrix[user] = dict(similar_users)
-
-        return self.user_similarity_matrix
-
-
-    def get_n_similar_users(self, user_id: int, n: int) -> list:
-        '''
-        Finds the n most similar users to a given user based on the similarity matrix.
-
-        Parameters
-        ----------
-        user_id : int
-            The ID of the user for whom similar users are being found.
-        n : int
-            The number of similar users to return.
-
-        Returns
-        -------
-        list
-            A list of tuples where each tuple contains a user ID and its similarity score.
-        '''
-        if self.user_similarity_matrix is None:
-            raise ValueError("User similarity matrix has not been computed. Call `fit` first.")
-
-        similarities = self.user_similarity_matrix.get(user_id, {})
-
-        # Sort by similarity score in descending order and return the top n, excluding the user itself
-        similar_users = sorted(similarities.items(), key=lambda x: x[1], reverse=True)
-        return [(uid, score) for uid, score in similar_users if uid != user_id][:n]
+        self.user_similarity_matrix = similarity_matrix
+        return similarity_matrix
 
     def fit(self):
         '''
@@ -149,7 +110,7 @@ class CollaborativeRecommender:
 
     def recommend_n_articles(self, user_id: int, n: int) -> list[int]:
         '''
-        Predict the top n articles a user might like based on similar users activity.
+        Predict the top n articles a user might like based on similar users' activity.
 
         Parameters
         ----------
@@ -163,8 +124,11 @@ class CollaborativeRecommender:
         list[int]
             A list of article IDs predicted to be most liked by the user.
         '''
+        if user_id not in self.user_similarity_matrix:
+            return []  # Return empty list if user not found
+
         # Get the n most similar users
-        similar_users = [uid for uid, _ in self.get_n_similar_users(user_id, n)]
+        similar_users = [uid for uid, _ in self.user_similarity_matrix[user_id]]
 
         # Get articles interacted with by similar users
         similar_user_articles = self.impressions.filter(
