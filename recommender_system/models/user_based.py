@@ -66,12 +66,13 @@ class CollaborativeRecommender:
         )
         return self.impressions
 
-    def build_user_similarity_matrix(self):
+    def build_user_similarity_matrix(self, sim_size=10):
         '''
-        Builds a user-user similarity matrix using cosine similarity based on impression scores.
+        Builds a user similarity matrix using cosine similarity based on impression scores.
+        Each user contains the `sim_size` most similar users, sorted by similarity.
 
-        The matrix is stored as a dictionary of dictionaries where keys are user IDs
-        and values are their similarity scores with other users.
+        The matrix is stored as a dictionary of lists where keys are user IDs
+        and values are dictionaries of `sim_size` most similar users and their similarity scores.
         '''
         # Pivot the data to create a user-item matrix
         user_item_matrix = self.impressions.pivot(
@@ -85,19 +86,30 @@ class CollaborativeRecommender:
         user_ids = user_item_matrix["user_id"].to_numpy()
         scores_matrix = user_item_matrix.drop("user_id").to_numpy()
 
-        # Calculate similarity matrix
+        # Normalize user vectors to compute cosine similarity
         norm_matrix = np.linalg.norm(scores_matrix, axis=1, keepdims=True)
         norm_matrix[norm_matrix == 0] = 1  # Prevent division by zero
         normalized_matrix = scores_matrix / norm_matrix
 
+        # Compute similarity matrix
         similarity_matrix = np.dot(normalized_matrix, normalized_matrix.T)
 
-        # Convert to dictionary for faster lookups
-        self.user_similarity_matrix = {
-            user_ids[i]: {user_ids[j]: similarity_matrix[i, j] for j in range(len(user_ids))}
-            for i in range(len(user_ids))
-        }
+        # Store only the top `sim_size` most similar users per user
+        self.user_similarity_matrix = {}
+        for i, user in enumerate(user_ids):
+            # Get similarity scores for this user, excluding itself
+            similar_users = [
+                (user_ids[j], similarity_matrix[i, j]) 
+                for j in range(len(user_ids)) if i != j
+            ]
+            # Sort by similarity and keep only the top `sim_size`
+            similar_users = sorted(similar_users, key=lambda x: x[1], reverse=True)[:sim_size]
+            
+            # Store as dictionary mapping user -> top similar users
+            self.user_similarity_matrix[user] = dict(similar_users)
+
         return self.user_similarity_matrix
+
 
     def get_n_similar_users(self, user_id: int, n: int) -> list:
         '''
