@@ -82,7 +82,8 @@ class CollaborativeRecommender:
 
     def recommend_n_articles(self, user_id: int, n: int) -> list[int]:
         '''
-        Predict the top n articles a user might like based on similar users' activity.
+        Predict the top n articles a user might like based on similar users' activity,
+        ensuring that articles the user has already read are not recommended.
 
         Parameters
         ----------
@@ -99,6 +100,11 @@ class CollaborativeRecommender:
         if user_id not in self.user_similarity_matrix:
             return []  # Return empty list if user not found
 
+        # Get articles the user has already read
+        user_articles = set(
+            self.impressions.filter(pl.col("user_id") == user_id)["article_id"].to_list()
+        )
+
         # Get the n most similar users
         similar_users = [uid for uid, _ in self.user_similarity_matrix[user_id]]
 
@@ -112,7 +118,10 @@ class CollaborativeRecommender:
             pl.col("impression_score").sum().alias("total_score")
         )
 
+        # Remove articles the user has already read
+        filtered_articles = article_scores.filter(~pl.col("article_id").is_in(user_articles))
+
         # Sort by scores in descending order and take the top n articles
-        recommended_articles = article_scores.sort("total_score", descending=True).head(n)
+        recommended_articles = filtered_articles.sort("total_score", descending=True).head(n)
 
         return recommended_articles["article_id"].to_list()
