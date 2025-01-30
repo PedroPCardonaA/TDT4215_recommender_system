@@ -1,6 +1,6 @@
 import polars as pl
 import numpy as np
-
+from scipy.spatial.distance import pdist, squareform
 
 class CollaborativeRecommender:
     def __init__(self, impressions: pl.DataFrame, scroll_percentage_weight=1, read_time_weight=1):
@@ -20,34 +20,6 @@ class CollaborativeRecommender:
         self.scroll_percentage_weight = scroll_percentage_weight
         self.read_time_weight = read_time_weight
         self.user_similarity_matrix = {}
-
-    def cosine_similarity(self, user1_score: np.ndarray, user2_score: np.ndarray) -> float:
-        '''
-        Calculate the cosine similarity between two vectors.
-
-        Parameters
-        ----------
-        user1_score : np.ndarray
-            A numpy array representing the behavior of user 1.
-        user2_score : np.ndarray
-            A numpy array representing the behavior of user 2.
-
-        Returns
-        -------
-        float
-            The cosine similarity score between the two vectors. Ranges from -1 to 1.
-        '''
-        norm_u = np.linalg.norm(user1_score)
-        norm_v = np.linalg.norm(user2_score)
-
-        # Handle division by zero
-        if norm_u == 0 or norm_v == 0:
-            return 0.0  # Return 0 similarity instead of NaN
-
-        similarity = np.dot(user1_score, user2_score) / (norm_u * norm_v)
-
-        # Handle potential NaN values due to numerical instability
-        return 0.0 if np.isnan(similarity) else similarity
 
     def add_impression_scores(self) -> pl.DataFrame:
         '''
@@ -79,25 +51,22 @@ class CollaborativeRecommender:
             values="impression_score",
             index="user_id",
             columns="article_id"
-        ).fill_null(0)  # Replace NaNs with 0
+        ).fill_null(0)
 
         user_ids = user_item_matrix["user_id"].to_list()
         user_vectors = user_item_matrix.drop("user_id").to_numpy()
 
-        # Compute pairwise cosine similarity
-        similarity_matrix = {}
-        for i, user_id in enumerate(user_ids):
-            similarities = []
-            for j, other_user_id in enumerate(user_ids):
-                if user_id != other_user_id:
-                    sim = self.cosine_similarity(user_vectors[i], user_vectors[j])
-                    similarities.append((other_user_id, sim))
+        # Vectorized cosine similarity calculation
+        similarity_matrix = 1 - squareform(pdist(user_vectors, metric='cosine'))
 
-            # Store top `sim_size` most similar users
-            similarity_matrix[user_id] = sorted(similarities, key=lambda x: x[1], reverse=True)[:sim_size]
+        # Store top `sim_size` most similar users for each user
+        top_similarities = np.argsort(-similarity_matrix, axis=1)[:, 1:sim_size+1]
+        self.user_similarity_matrix = {
+            user_ids[i]: [(user_ids[j], similarity_matrix[i, j]) for j in top_similarities[i]]
+            for i in range(len(user_ids))
+        }
 
-        self.user_similarity_matrix = similarity_matrix
-        return similarity_matrix
+        return self.user_similarity_matrix
 
     def fit(self):
         '''
