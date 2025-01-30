@@ -42,9 +42,12 @@ class CollaborativeRecommender:
 
         # Handle division by zero
         if norm_u == 0 or norm_v == 0:
-            return 0.0
+            return 0.0  # Return 0 similarity instead of NaN
 
-        return np.dot(user1_score, user2_score) / (norm_u * norm_v)
+        similarity = np.dot(user1_score, user2_score) / (norm_u * norm_v)
+
+        # Handle potential NaN values due to numerical instability
+        return 0.0 if np.isnan(similarity) else similarity
 
     def add_impression_scores(self) -> pl.DataFrame:
         '''
