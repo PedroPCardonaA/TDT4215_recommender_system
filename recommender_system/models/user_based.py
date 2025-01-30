@@ -3,7 +3,7 @@ import numpy as np
 
 
 class CollaborativeRecommender:
-    def __init__(self, impressions: pl.DataFrame, items: pl.DataFrame, scroll_percentage_weight=1, read_time_weight=1):
+    def __init__(self, impressions: pl.DataFrame, scroll_percentage_weight=1, read_time_weight=1):
         '''
         Initialize the CollaborativeRecommender with a user-item dataframe.
 
@@ -19,7 +19,6 @@ class CollaborativeRecommender:
             The weight for the read time in the impression score.
         '''
         self.impressions = impressions
-        self.items = items
         self.scroll_percentage_weight = scroll_percentage_weight
         self.read_time_weight = read_time_weight
         self.user_similarity_matrix = None
