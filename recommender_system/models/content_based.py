@@ -1,5 +1,6 @@
 import polars as pl
 import numpy as np
+from joblib import Parallel, delayed
 
 class CosineSimilarityContentBased:
     """
@@ -33,7 +34,7 @@ class CosineSimilarityContentBased:
         user_ratings = self.behavior_data.filter(pl.col("user_id") == user_id)
 
         if user_ratings.is_empty():
-            raise ValueError(f"No ratings found for user {user_id}")
+            return np.mean(list(self.item_vectors.values()), axis=0)
 
         rated_items = user_ratings["article_id"].to_numpy()
         scores = user_ratings["score"].to_numpy()
@@ -92,3 +93,72 @@ class CosineSimilarityContentBased:
         item_vector = self.item_vectors[item_id]
 
         return float(np.dot(user_vector, item_vector) / (np.linalg.norm(user_vector) * np.linalg.norm(item_vector)))
+
+import polars as pl
+import numpy as np
+from joblib import Parallel, delayed
+
+def precision_at_k(recommended_items, relevant_items, k=5):
+    """
+    Compute Precision@K.
+    """
+    if not relevant_items:
+        return 0.0
+    recommended_at_k = recommended_items[:k]
+    hits = sum(1 for item in recommended_at_k if item in relevant_items)
+    return hits / k
+
+def ndcg_at_k(recommended_items, relevant_items, k=5):
+    """
+    Compute Normalized Discounted Cumulative Gain (NDCG) at K.
+    """
+    def dcg(scores):
+        return sum((score / np.log2(idx + 2)) for idx, score in enumerate(scores))
+
+    recommended_at_k = recommended_items[:k]
+    gains = [1 if item in relevant_items else 0 for item in recommended_at_k]
+    
+    ideal_gains = sorted([1] * len(relevant_items) + [0] * (k - len(relevant_items)), reverse=True)
+
+    actual_dcg = dcg(gains)
+    ideal_dcg = dcg(ideal_gains[:k])
+
+    return actual_dcg / ideal_dcg if ideal_dcg > 0 else 0.0
+
+def compute_user_metrics(recommender, user_id, test_data, k=5):
+    """
+    Compute MAP@K and NDCG@K for a single user.
+    """
+    relevant_items = set(test_data.filter(pl.col("user_id") == user_id)["article_id"].to_numpy())
+    if not relevant_items:
+        return None  # Skip users with no interactions
+
+    recommended_items = recommender.recommend(user_id, n=k)
+
+    precision = precision_at_k(recommended_items, relevant_items, k)
+    ndcg = ndcg_at_k(recommended_items, relevant_items, k)
+
+    return precision, ndcg
+
+def evaluate_recommender(recommender, test_data, k=5, n_jobs=-1):
+    """
+    Evaluate the recommender using MAP@K and NDCG@K in parallel.
+    """
+    user_ids = test_data["user_id"].unique().to_numpy()
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(compute_user_metrics)(recommender, user_id, test_data, k) for user_id in user_ids
+    )
+
+    # Filter out None values (users with no interactions)
+    results = [res for res in results if res is not None]
+
+    if not results:
+        return {"MAP@K": 0.0, "NDCG@K": 0.0}
+
+    map_scores, ndcg_scores = zip(*results)
+
+    return {
+        "MAP@K": np.mean(map_scores),
+        "NDCG@K": np.mean(ndcg_scores),
+    }
