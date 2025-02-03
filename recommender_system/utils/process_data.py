@@ -4,13 +4,14 @@ def user_item_interaction_scores(behaviors: pl.DataFrame, article: pl.DataFrame)
     behaviors = behaviors.drop_nans(subset=["article_id", "user_id"])
     
     behaviors = behaviors[
-        ["user_id", "article_id", "read_time", "scroll_percentage"]
+        ["user_id", "article_id", "read_time", "scroll_percentage","impression_time"]
     ]
     
     behaviors = behaviors.group_by(["user_id", "article_id"]).agg(
-        pl.col("read_time").sum(),
-        pl.col("scroll_percentage").max()
-    )
+    pl.col("read_time").sum(),
+    pl.col("scroll_percentage").max(),
+    pl.col("impression_time").max().alias("impression_time")
+)
     
     behaviors = behaviors.with_columns(
         (pl.col("read_time").add(1).log()).alias("read_time_log")
