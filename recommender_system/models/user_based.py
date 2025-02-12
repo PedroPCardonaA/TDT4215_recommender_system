@@ -172,7 +172,7 @@ class CollaborativeRecommender:
         
         return actual_dcg / ideal_dcg if ideal_dcg > 0 else 0.0
 
-    def compute_user_metrics(self, user_id, k=5):
+    def compute_user_metrics(self, test_data: pl.DataFrame, user_id: int, k=5):
         '''
         Compute Precision@K and NDCG@K for a single user.
 
@@ -184,8 +184,9 @@ class CollaborativeRecommender:
             tuple or None: (precision, ndcg) scores, or None if the user has no test interactions.
         '''
         relevant_items = set(
-            self.impressions.filter(
+            test_data.filter(
                 pl.col("user_id") == user_id)["article_id"].to_numpy())
+        print(relevant_items)
         if not relevant_items:
             return None
 
@@ -195,7 +196,7 @@ class CollaborativeRecommender:
 
         return precision, ndcg
 
-    def evaluate_recommender(self, k=5, n_jobs=-1, user_sample=None):
+    def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None):
         '''
         Evaluate the recommender using MAP@K and NDCG@K in parallel on a sample of users.
 
@@ -215,7 +216,7 @@ class CollaborativeRecommender:
                                         replace=False)
 
         results = Parallel(n_jobs=n_jobs)(
-            delayed(self.compute_user_metrics)(user_id, k)
+            delayed(self.compute_user_metrics)(test_data, user_id, k)
             for user_id in user_ids)
         results = [res for res in results if res is not None]
 
