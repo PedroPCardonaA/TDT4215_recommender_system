@@ -161,17 +161,23 @@ class CollaborativeRecommender:
     # Accuracy functions from content based
 
     def precision_at_k(self, recommended_items, relevant_items, k=5):
-        """
-        Compute Precision@K.
+        '''
+        Compute the Precision@K of our model.
         
-        Args:
-            recommended_items (list): List of recommended item IDs.
-            relevant_items (set): Set of relevant item IDs.
-            k (int): Number of top recommendations to consider.
-            
-        Returns:
-            float: The Precision@K score.
-        """
+        Parameters
+        ----------
+        recommended_items : list
+            List of recommended item IDs.
+        relevant_items : set
+            Set of relevant item IDs.
+        k : int 
+            Number of top recommendations to consider.
+
+        Returns
+        -------
+        float
+            The Precision@K score.
+        '''
         if not relevant_items:
             return 0.0
         recommended_at_k = recommended_items[:k]
@@ -179,17 +185,23 @@ class CollaborativeRecommender:
         return hits / k
 
     def ndcg_at_k(self, recommended_items, relevant_items, k=5):
-        """
+        '''
         Compute Normalized Discounted Cumulative Gain (NDCG) at K.
         
-        Args:
-            recommended_items (list): List of recommended item IDs.
-            relevant_items (set): Set of relevant item IDs.
-            k (int): Number of top recommendations to consider.
-            
-        Returns:
-            float: The NDCG@K score.
-        """
+        Parameters
+        ----------
+        recommended_items : list
+            List of recommended item IDs.
+        relevant_items : set
+            Set of relevant item IDs.
+        k : int 
+            Number of top recommendations to consider.
+
+        Returns
+        -------
+        float
+            The NDCG@K score.
+        '''
         def dcg(scores):
             return sum((score / np.log2(idx + 2)) for idx, score in enumerate(scores))
         
@@ -207,12 +219,18 @@ class CollaborativeRecommender:
         '''
         Compute Precision@K and NDCG@K for a single user.
 
-        Args:
-            user_id (int): The user ID.
-            k (int): Number of top recommendations to consider.
+        Parameters
+        ----------
+        user_id : int
+            The user ID.
+        k : int
+            Number of top recommendations to consider.
+        
+        Returns
+        -------
+        tuple or None
+            (precision, ndcg) scores, or None if the user has no test interactions.
 
-        Returns:
-            tuple or None: (precision, ndcg) scores, or None if the user has no test interactions.
         '''
         relevant_items = set(
             test_data.filter(
@@ -231,13 +249,21 @@ class CollaborativeRecommender:
         '''
         Evaluate the recommender using MAP@K and NDCG@K in parallel on a sample of users.
 
-        Args:
-            k (int): Number of top recommendations to consider.
-            n_jobs (int): Number of parallel jobs for joblib.Parallel.
-            user_sample (int or None): Number of users to sample for evaluation. If None, use all users.
+        
+        Parameters
+        ----------
+        k : int
+            Number of top recommendations to consider.
+        n_jobs : int
+            Number of parallel jobs for joblib.Parallel.
+        user_sample : int or None
+            Number of users to sample for evaluation. If None, use all users.
+        
+        Returns
+        -------
+        dict 
+            A dictionary with MAP@K and NDCG@K scores.
 
-        Returns:
-            dict: A dictionary with MAP@K and NDCG@K scores.
         '''
         user_ids = self.interactions["user_id"].unique().to_numpy()
 
