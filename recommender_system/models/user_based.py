@@ -99,8 +99,7 @@ class CollaborativeRecommender:
 
     def recommend_n_articles(self, user_id: int, n: int, allow_read_articles=False) -> list[int]:
         '''
-        Predict the top n articles a user might like based on similar users' activity,
-        ensuring that articles the user has already read are not recommended.
+        Recommend the top n articles for a user based on similar users' activity, excluding already read articles unless allowed.
 
         Parameters
         ----------
@@ -108,11 +107,9 @@ class CollaborativeRecommender:
             The ID of the user for whom to make predictions.
         n : int
             The number of articles to recommend.
-        binary_scoring : bool
-            If True, we will only use the action of reading articles when comparing users, if False we will use the interaction scores
         allow_read_articles : bool
-            If the reccomender can reccomend already read articles
-            
+            Whether already read articles can be recommended.
+
         Returns
         -------
         list[int]
@@ -121,39 +118,29 @@ class CollaborativeRecommender:
         if user_id not in self.user_similarity_matrix:
             return []  # Return empty list if user not found
 
-        # Get articles the user has already read
-        user_articles = set(
+        # Get the articles the user has already read
+        read_articles = set(
             self.interactions.filter(pl.col("user_id") == user_id)["article_id"].to_list()
         )
 
-        # Get the n most similar users
+        # Get similar users' article interactions
         similar_users = [uid for uid, _ in self.user_similarity_matrix[user_id]]
+        similar_user_articles = self.interactions.filter(pl.col("user_id").is_in(similar_users))
 
-        # Get articles interacted with by similar users
-        similar_user_articles = self.interactions.filter(
-            pl.col("user_id").is_in(similar_users)
+        # Aggregate interaction scores for each article
+        article_scores = similar_user_articles.groupby("article_id").agg(
+            pl.len().alias("total_score") if self.binary_model else pl.col("interaction_score").sum().alias("total_score")
         )
 
-        # Aggregate scores for each article
-        if self.binary_model:
-            article_scores = similar_user_articles.group_by("article_id").agg(
-                pl.len().alias("total_score")
-            )
-        else:
-            article_scores = similar_user_articles.group_by("article_id").agg(
-                pl.col("interaction_score").sum().alias("total_score")
-            )
+        # Filter out articles the user has already read (unless allowed)
+        if not allow_read_articles:
+            article_scores = article_scores.filter(~pl.col("article_id").is_in(read_articles))
 
-        # Remove articles the user has already read
-        if allow_read_articles:
-            filtered_articles = article_scores
-        else:
-            filtered_articles = article_scores.filter(~pl.col("article_id").is_in(user_articles))
+        # Sort by total score and select top n articles
+        top_articles = article_scores.sort("total_score", descending=True).head(n)
 
-        # Sort by scores in descending order and take the top n articles
-        recommended_articles = filtered_articles.sort("total_score", descending=True).head(n)
+        return top_articles["article_id"].to_list()
 
-        return recommended_articles["article_id"].to_list()
 
     # Accuracy functions from content based
 
