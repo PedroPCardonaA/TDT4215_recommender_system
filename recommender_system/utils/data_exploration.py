@@ -39,3 +39,28 @@ def perform_eda(df: pl.DataFrame, name: str = "DataFrame"):
     print("\n-- Null Counts --")
     null_counts_df = df.null_count()
     display(null_counts_df.to_pandas())
+
+
+import polars as pl
+
+def data_sparsity(behavior_df: pl.DataFrame):
+    """
+    Calculates the sparsity of a user-item interaction DataFrame.
+    Duplicate interactions (same user_id and article_id) are removed.
+
+    Parameters
+    ----------
+    behavior_df : pl.DataFrame
+        The user-item interaction DataFrame.
+
+    Returns
+    -------
+    float
+        The sparsity of the DataFrame.
+    """
+    unique_behavior_df = behavior_df.unique(subset=["user_id", "article_id"])
+    num_interactions = unique_behavior_df.shape[0]
+    num_users = unique_behavior_df["user_id"].n_unique()
+    num_items = unique_behavior_df["article_id"].n_unique()
+    sparsity = 1 - (num_interactions / (num_users * num_items))
+    return sparsity
