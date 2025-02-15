@@ -87,7 +87,7 @@ class CollaborativeRecommender:
         self.add_interaction_scores()
         return self.build_user_similarity_matrix()
 
-    def recommend_n_articles(self, user_id: int, n: int, allow_read=False) -> list[int]:
+    def recommend_n_articles(self, user_id: int, n: int, binary_scoring = False, allow_read_articles = False) -> list[int]:
         '''
         Predict the top n articles a user might like based on similar users' activity,
         ensuring that articles the user has already read are not recommended.
@@ -98,7 +98,11 @@ class CollaborativeRecommender:
             The ID of the user for whom to make predictions.
         n : int
             The number of articles to recommend.
-
+        binary_scoring : bool
+            If True, we will only use the action of reading articles when comparing users, if False we will use the interaction scores
+        allow_read_articles : bool
+            If the reccomender can reccomend already read articles
+            
         Returns
         -------
         list[int]
@@ -121,12 +125,17 @@ class CollaborativeRecommender:
         )
 
         # Aggregate scores for each article
-        article_scores = similar_user_articles.group_by("article_id").agg(
-            pl.col("interaction_score").sum().alias("total_score")
-        )
+        if binary_scoring:
+            article_scores = similar_user_articles.group_by("article_id").agg(
+                pl.len().alias("total_score")
+            )
+        else:
+            article_scores = similar_user_articles.group_by("article_id").agg(
+                pl.col("interaction_score").sum().alias("total_score")
+            )
 
         # Remove articles the user has already read
-        if allow_read:
+        if allow_read_articles:
             filtered_articles = article_scores
         else:
             filtered_articles = article_scores.filter(~pl.col("article_id").is_in(user_articles))
