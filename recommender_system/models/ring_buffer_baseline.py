@@ -1,6 +1,8 @@
 import polars as pl
 from typing import List, Any
 import datetime
+import numpy as np
+import matplotlib.pyplot as plt
 
 class RingBuffer:
     """
@@ -190,6 +192,61 @@ class RingBufferBaseline:
 
         # Return only the article ids (assumed to be at index 1)
         return [article[1] for article in recommended_articles]
+    
+
+    def evaluate(self, test_data: pl.DataFrame, k: int = 5) -> dict:
+        """
+        Evaluate the recommender using precision, recall, and FPR at k.
+
+        For each user in the test set, relevant items are defined as the set of article_ids
+        the user has in the test data. The recommender's recommendations are then compared against
+        these relevant items. The candidate set for negatives is defined as all article_ids in test_data.
+
+        Args:
+            test_data (pl.DataFrame): A DataFrame containing test interactions (with "user_id" and "article_id").
+            k (int): The number of top recommendations to consider.
+
+        Returns:
+            dict: A dictionary with average precision, recall, and FPR.
+        """
+        # Candidate set: all unique article IDs in test_data.
+        candidate_set = set(test_data.select("article_id").unique().to_numpy().flatten())
+        
+        # Get unique users from test data.
+        user_ids = test_data.select("user_id").unique().to_numpy().flatten()
+        precisions = []
+        recalls = []
+        fprs = []
+        
+        for user in user_ids:
+            # Relevant items for this user.
+            user_test = test_data.filter(pl.col("user_id") == user)
+            relevant_items = set(user_test.select("article_id").to_numpy().flatten())
+            if not relevant_items:
+                continue
+
+            recommended_items = self.recommend(user, n=k)  # list of recommended article ids
+
+            # Compute hits.
+            hits = sum(1 for item in recommended_items if item in relevant_items)
+            precision = hits / k
+            recall = hits / len(relevant_items)
+            
+            # Compute FPR:
+            # Negatives: candidate_set minus relevant_items.
+            negatives = candidate_set - relevant_items
+            false_positives = sum(1 for item in recommended_items if item not in relevant_items)
+            fpr = false_positives / len(negatives) if negatives else 0.0
+
+            precisions.append(precision)
+            recalls.append(recall)
+            fprs.append(fpr)
+
+        avg_precision = np.mean(precisions) if precisions else 0.0
+        avg_recall = np.mean(recalls) if recalls else 0.0
+        avg_fpr = np.mean(fprs) if fprs else 0.0
+        
+        return {"precision": avg_precision, "recall": avg_recall, "fpr": avg_fpr}
 
 
     def reset_buffer(self):

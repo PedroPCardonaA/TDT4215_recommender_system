@@ -4,3 +4,4 @@ fastparquet
 ipykernel
 numpy
 joblib
+matplotlib
