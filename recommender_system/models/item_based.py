@@ -53,33 +53,30 @@ class CollaborativeRecommender:
         Builds a user similarity matrix using cosine similarity based on interaction scores.
         Each user contains the `sim_size` most similar users, sorted by similarity.
 
-        The matrix is stored as a dictionary of lists where the keys are user IDs
-        and the values in the lists are `sim_size` instances of the most similar users, sorted by similarity.
+        Parameters
+        ----------
+        sim_size : int
+            How many other similar users should be saved for every user in the matrix
+
+        Returns
+        -------
+        dict
+            A dictionary of lists where the keys are user IDs and the values in the lists are 
+            `sim_size` instances of the most similar users, sorted by similarity.
         '''
-        # Create user-item binary matrix
-        if self.binary_model:
-            user_item_matrix = self.interactions.with_columns(
-                pl.lit(1).alias("interaction_score")  # Add binary interaction column
-            ).pivot(
-                values="interaction_score",
-                index="user_id",
-                columns="article_id"
-            ).fill_null(0)
-        else:
-            user_item_matrix = self.interactions.pivot(
-            values="interaction_score",
-            index="user_id",
-            columns="article_id"
-            ).fill_null(0)
+        # Create user-item matrix
+        user_item_matrix = self.interactions.with_columns(
+            pl.lit(1).alias("interaction_score") if self.binary_model else pl.col("interaction_score")
+        ).pivot(values="interaction_score", index="user_id", columns="article_id").fill_null(0)
 
         user_ids = user_item_matrix["user_id"].to_list()
         user_vectors = user_item_matrix.drop("user_id").to_numpy()
 
-        # Compute cosine similarity matrix
+        # Compute similarity matrix and get top `sim_size` similar users
         similarity_matrix = 1 - squareform(pdist(user_vectors, metric='cosine'))
-
-        # Store top `sim_size` most similar users for each user
         top_similarities = np.argsort(-similarity_matrix, axis=1)[:, 1:sim_size + 1]
+
+        # Store the most similar users for each user
         self.user_similarity_matrix = {
             user_ids[i]: [(user_ids[j], similarity_matrix[i, j]) for j in top_similarities[i]]
             for i in range(len(user_ids))
@@ -102,8 +99,7 @@ class CollaborativeRecommender:
 
     def recommend_n_articles(self, user_id: int, n: int, allow_read_articles=False) -> list[int]:
         '''
-        Predict the top n articles a user might like based on similar users' activity,
-        ensuring that articles the user has already read are not recommended.
+        Recommend the top n articles for a user based on similar users' activity, excluding already read articles unless allowed.
 
         Parameters
         ----------
@@ -111,11 +107,9 @@ class CollaborativeRecommender:
             The ID of the user for whom to make predictions.
         n : int
             The number of articles to recommend.
-        binary_scoring : bool
-            If True, we will only use the action of reading articles when comparing users, if False we will use the interaction scores
         allow_read_articles : bool
-            If the reccomender can reccomend already read articles
-            
+            Whether already read articles can be recommended.
+
         Returns
         -------
         list[int]
@@ -124,54 +118,47 @@ class CollaborativeRecommender:
         if user_id not in self.user_similarity_matrix:
             return []  # Return empty list if user not found
 
-        # Get articles the user has already read
-        user_articles = set(
+        # Get the articles the user has already read
+        read_articles = set(
             self.interactions.filter(pl.col("user_id") == user_id)["article_id"].to_list()
         )
 
-        # Get the n most similar users
+        # Get similar users' article interactions
         similar_users = [uid for uid, _ in self.user_similarity_matrix[user_id]]
+        similar_user_articles = self.interactions.filter(pl.col("user_id").is_in(similar_users))
 
-        # Get articles interacted with by similar users
-        similar_user_articles = self.interactions.filter(
-            pl.col("user_id").is_in(similar_users)
+        # Aggregate interaction scores for each article
+        article_scores = similar_user_articles.groupby("article_id").agg(
+            pl.len().alias("total_score") if self.binary_model else pl.col("interaction_score").sum().alias("total_score")
         )
 
-        # Aggregate scores for each article
-        if self.binary_model:
-            article_scores = similar_user_articles.group_by("article_id").agg(
-                pl.len().alias("total_score")
-            )
-        else:
-            article_scores = similar_user_articles.group_by("article_id").agg(
-                pl.col("interaction_score").sum().alias("total_score")
-            )
+        # Filter out articles the user has already read (unless allowed)
+        if not allow_read_articles:
+            article_scores = article_scores.filter(~pl.col("article_id").is_in(read_articles))
 
-        # Remove articles the user has already read
-        if allow_read_articles:
-            filtered_articles = article_scores
-        else:
-            filtered_articles = article_scores.filter(~pl.col("article_id").is_in(user_articles))
+        # Sort by total score and select top n articles
+        top_articles = article_scores.sort("total_score", descending=True).head(n)
 
-        # Sort by scores in descending order and take the top n articles
-        recommended_articles = filtered_articles.sort("total_score", descending=True).head(n)
-
-        return recommended_articles["article_id"].to_list()
-
-    # Accuracy functions from content based
+        return top_articles["article_id"].to_list()
 
     def precision_at_k(self, recommended_items, relevant_items, k=5):
-        """
-        Compute Precision@K.
+        '''
+        Compute the Precision@K of our model.
         
-        Args:
-            recommended_items (list): List of recommended item IDs.
-            relevant_items (set): Set of relevant item IDs.
-            k (int): Number of top recommendations to consider.
-            
-        Returns:
-            float: The Precision@K score.
-        """
+        Parameters
+        ----------
+        recommended_items : list
+            List of recommended item IDs.
+        relevant_items : set
+            Set of relevant item IDs.
+        k : int 
+            Number of top recommendations to consider.
+
+        Returns
+        -------
+        float
+            The Precision@K score.
+        '''
         if not relevant_items:
             return 0.0
         recommended_at_k = recommended_items[:k]
@@ -179,17 +166,23 @@ class CollaborativeRecommender:
         return hits / k
 
     def ndcg_at_k(self, recommended_items, relevant_items, k=5):
-        """
+        '''
         Compute Normalized Discounted Cumulative Gain (NDCG) at K.
         
-        Args:
-            recommended_items (list): List of recommended item IDs.
-            relevant_items (set): Set of relevant item IDs.
-            k (int): Number of top recommendations to consider.
-            
-        Returns:
-            float: The NDCG@K score.
-        """
+        Parameters
+        ----------
+        recommended_items : list
+            List of recommended item IDs.
+        relevant_items : set
+            Set of relevant item IDs.
+        k : int 
+            Number of top recommendations to consider.
+
+        Returns
+        -------
+        float
+            The NDCG@K score.
+        '''
         def dcg(scores):
             return sum((score / np.log2(idx + 2)) for idx, score in enumerate(scores))
         
@@ -207,12 +200,18 @@ class CollaborativeRecommender:
         '''
         Compute Precision@K and NDCG@K for a single user.
 
-        Args:
-            user_id (int): The user ID.
-            k (int): Number of top recommendations to consider.
+        Parameters
+        ----------
+        user_id : int
+            The user ID.
+        k : int
+            Number of top recommendations to consider.
+        
+        Returns
+        -------
+        tuple or None
+            (precision, ndcg) scores, or None if the user has no test interactions.
 
-        Returns:
-            tuple or None: (precision, ndcg) scores, or None if the user has no test interactions.
         '''
         relevant_items = set(
             test_data.filter(
@@ -231,13 +230,21 @@ class CollaborativeRecommender:
         '''
         Evaluate the recommender using MAP@K and NDCG@K in parallel on a sample of users.
 
-        Args:
-            k (int): Number of top recommendations to consider.
-            n_jobs (int): Number of parallel jobs for joblib.Parallel.
-            user_sample (int or None): Number of users to sample for evaluation. If None, use all users.
+        
+        Parameters
+        ----------
+        k : int
+            Number of top recommendations to consider.
+        n_jobs : int
+            Number of parallel jobs for joblib.Parallel.
+        user_sample : int or None
+            Number of users to sample for evaluation. If None, use all users.
+        
+        Returns
+        -------
+        dict 
+            A dictionary with MAP@K and NDCG@K scores.
 
-        Returns:
-            dict: A dictionary with MAP@K and NDCG@K scores.
         '''
         user_ids = self.interactions["user_id"].unique().to_numpy()
 
