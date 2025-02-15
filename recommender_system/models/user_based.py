@@ -141,9 +141,6 @@ class CollaborativeRecommender:
 
         return top_articles["article_id"].to_list()
 
-
-    # Accuracy functions from content based
-
     def precision_at_k(self, recommended_items, relevant_items, k=5):
         '''
         Compute the Precision@K of our model.
