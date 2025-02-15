@@ -87,7 +87,7 @@ class CollaborativeRecommender:
         self.add_interaction_scores()
         return self.build_user_similarity_matrix()
 
-    def recommend_n_articles(self, user_id: int, n: int, binary_scoring = False, allow_read_articles = False) -> list[int]:
+    def recommend_n_articles(self, user_id: int, n: int, binary_scoring=False, allow_read_articles=False) -> list[int]:
         '''
         Predict the top n articles a user might like based on similar users' activity,
         ensuring that articles the user has already read are not recommended.
@@ -190,7 +190,7 @@ class CollaborativeRecommender:
         
         return actual_dcg / ideal_dcg if ideal_dcg > 0 else 0.0
 
-    def compute_user_metrics(self, test_data: pl.DataFrame, user_id: int, k=5, allow_read=False):
+    def compute_user_metrics(self, test_data: pl.DataFrame, user_id: int, k=5, allow_read_articles=False, binary_scoring=False):
         '''
         Compute Precision@K and NDCG@K for a single user.
 
@@ -208,13 +208,13 @@ class CollaborativeRecommender:
         if not relevant_items:
             return None
 
-        recommended_items = self.recommend_n_articles(user_id, n=k, allow_read=allow_read)
+        recommended_items = self.recommend_n_articles(user_id, n=k, allow_read_articles=allow_read_articles, binary_scoring=binary_scoring)
         precision = self.precision_at_k(recommended_items, relevant_items, k)
         ndcg = self.ndcg_at_k(recommended_items, relevant_items, k)
 
         return precision, ndcg
 
-    def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None, allow_read=False):
+    def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None, allow_read_articles=False, binary_scoring=False):
         '''
         Evaluate the recommender using MAP@K and NDCG@K in parallel on a sample of users.
 
@@ -234,7 +234,7 @@ class CollaborativeRecommender:
                                         replace=False)
 
         results = Parallel(n_jobs=n_jobs)(
-            delayed(self.compute_user_metrics)(test_data, user_id, k, allow_read)
+            delayed(self.compute_user_metrics)(test_data, user_id, k, allow_read_articles, binary_scoring)
             for user_id in user_ids)
         results = [res for res in results if res is not None]
 
