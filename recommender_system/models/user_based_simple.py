@@ -51,7 +51,7 @@ class CollaborativeRecommender:
         '''
         return self.build_user_similarity_matrix()
 
-    def recommend_n_articles(self, user_id: int, n: int) -> list[int]:
+    def recommend_n_articles(self, user_id: int, n: int, allow_read = False) -> list[int]:
         '''
         Recommend top `n` articles for a user based on similar users' interactions.
         '''
@@ -69,7 +69,11 @@ class CollaborativeRecommender:
             pl.len().alias("total_score")
         )
 
-        filtered_articles = article_scores.filter(~pl.col("article_id").is_in(user_articles))
+        if allow_read:
+            filtered_articles = article_scores
+        else:
+            filtered_articles = article_scores.filter(~pl.col("article_id").is_in(user_articles))
+        
         recommended_articles = filtered_articles.sort("total_score", descending=True).head(n)
 
         return recommended_articles["article_id"].to_list()
@@ -120,7 +124,7 @@ class CollaborativeRecommender:
         
         return actual_dcg / ideal_dcg if ideal_dcg > 0 else 0.0
 
-    def compute_user_metrics(self, test_data: pl.DataFrame, user_id: int, k=5):
+    def compute_user_metrics(self, test_data: pl.DataFrame, user_id: int, k=5, allow_read=False):
         '''
         Compute Precision@K and NDCG@K for a single user.
 
@@ -138,13 +142,13 @@ class CollaborativeRecommender:
         if not relevant_items:
             return None
 
-        recommended_items = self.recommend_n_articles(user_id, n=k)
+        recommended_items = self.recommend_n_articles(user_id, n=k, allow_read=allow_read)
         precision = self.precision_at_k(recommended_items, relevant_items, k)
         ndcg = self.ndcg_at_k(recommended_items, relevant_items, k)
 
         return precision, ndcg
 
-    def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None):
+    def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None, allow_read=False):
         '''
         Evaluate the recommender using MAP@K and NDCG@K in parallel on a sample of users.
 
@@ -164,7 +168,7 @@ class CollaborativeRecommender:
                                         replace=False)
 
         results = Parallel(n_jobs=n_jobs)(
-            delayed(self.compute_user_metrics)(test_data, user_id, k)
+            delayed(self.compute_user_metrics)(test_data, user_id, k, allow_read)
             for user_id in user_ids)
         results = [res for res in results if res is not None]
 
