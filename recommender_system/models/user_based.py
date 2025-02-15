@@ -4,7 +4,7 @@ from scipy.spatial.distance import pdist, squareform
 from joblib import Parallel, delayed
 
 class CollaborativeRecommender:
-    def __init__(self, interactions: pl.DataFrame):
+    def __init__(self, interactions: pl.DataFrame, binary_model = False):
         '''
         Initialize the CollaborativeRecommender with a user-item dataframe.
 
@@ -12,8 +12,11 @@ class CollaborativeRecommender:
         ----------
         interactions : pl.DataFrame
             A DataFrame containing user interactions with articles.
+        binary_model : bool
+            Whether or not we use only reading articles for user similarity (True) or user interaction details as well (False)
         '''
         self.interactions = interactions
+        self.binary_model = binary_model
         self.user_similarity_matrix = {}
 
     def add_interaction_scores(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0) -> pl.DataFrame:
@@ -53,17 +56,26 @@ class CollaborativeRecommender:
         The matrix is stored as a dictionary of lists where the keys are user IDs
         and the values in the lists are `sim_size` instances of the most similar users, sorted by similarity.
         '''
-        # Pivot to create user-item matrix
-        user_item_matrix = self.interactions.pivot(
+        # Create user-item binary matrix
+        if self.binary_model:
+            user_item_matrix = self.interactions.with_columns(
+                pl.lit(1).alias("interaction_score")  # Add binary interaction column
+            ).pivot(
+                values="interaction_score",
+                index="user_id",
+                columns="article_id"
+            ).fill_null(0)
+        else:
+            user_item_matrix = self.interactions.pivot(
             values="interaction_score",
             index="user_id",
             columns="article_id"
-        ).fill_null(0)
+            ).fill_null(0)
 
         user_ids = user_item_matrix["user_id"].to_list()
         user_vectors = user_item_matrix.drop("user_id").to_numpy()
 
-        # Vectorized cosine similarity calculation
+        # Compute cosine similarity matrix
         similarity_matrix = 1 - squareform(pdist(user_vectors, metric='cosine'))
 
         # Store top `sim_size` most similar users for each user
@@ -84,10 +96,11 @@ class CollaborativeRecommender:
         dict
             The user-user similarity matrix.
         '''
-        self.add_interaction_scores()
+        self.add_interaction_scores() if not self.binary_model else None
+
         return self.build_user_similarity_matrix()
 
-    def recommend_n_articles(self, user_id: int, n: int, binary_scoring=False, allow_read_articles=False) -> list[int]:
+    def recommend_n_articles(self, user_id: int, n: int, allow_read_articles=False) -> list[int]:
         '''
         Predict the top n articles a user might like based on similar users' activity,
         ensuring that articles the user has already read are not recommended.
@@ -125,7 +138,7 @@ class CollaborativeRecommender:
         )
 
         # Aggregate scores for each article
-        if binary_scoring:
+        if self.binary_model:
             article_scores = similar_user_articles.group_by("article_id").agg(
                 pl.len().alias("total_score")
             )
@@ -190,7 +203,7 @@ class CollaborativeRecommender:
         
         return actual_dcg / ideal_dcg if ideal_dcg > 0 else 0.0
 
-    def compute_user_metrics(self, test_data: pl.DataFrame, user_id: int, k=5, allow_read_articles=False, binary_scoring=False):
+    def compute_user_metrics(self, test_data: pl.DataFrame, user_id: int, k=5, allow_read_articles=False):
         '''
         Compute Precision@K and NDCG@K for a single user.
 
@@ -208,13 +221,13 @@ class CollaborativeRecommender:
         if not relevant_items:
             return None
 
-        recommended_items = self.recommend_n_articles(user_id, n=k, allow_read_articles=allow_read_articles, binary_scoring=binary_scoring)
+        recommended_items = self.recommend_n_articles(user_id, n=k, allow_read_articles=allow_read_articles)
         precision = self.precision_at_k(recommended_items, relevant_items, k)
         ndcg = self.ndcg_at_k(recommended_items, relevant_items, k)
 
         return precision, ndcg
 
-    def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None, allow_read_articles=False, binary_scoring=False):
+    def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None, allow_read_articles=False):
         '''
         Evaluate the recommender using MAP@K and NDCG@K in parallel on a sample of users.
 
@@ -234,7 +247,7 @@ class CollaborativeRecommender:
                                         replace=False)
 
         results = Parallel(n_jobs=n_jobs)(
-            delayed(self.compute_user_metrics)(test_data, user_id, k, allow_read_articles, binary_scoring)
+            delayed(self.compute_user_metrics)(test_data, user_id, k, allow_read_articles)
             for user_id in user_ids)
         results = [res for res in results if res is not None]
 
