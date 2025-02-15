@@ -53,33 +53,30 @@ class CollaborativeRecommender:
         Builds a user similarity matrix using cosine similarity based on interaction scores.
         Each user contains the `sim_size` most similar users, sorted by similarity.
 
-        The matrix is stored as a dictionary of lists where the keys are user IDs
-        and the values in the lists are `sim_size` instances of the most similar users, sorted by similarity.
+        Parameters
+        ----------
+        sim_size : int
+            How many other similar users should be saved for every user in the matrix
+
+        Returns
+        -------
+        dict
+            A dictionary of lists where the keys are user IDs and the values in the lists are 
+            `sim_size` instances of the most similar users, sorted by similarity.
         '''
-        # Create user-item binary matrix
-        if self.binary_model:
-            user_item_matrix = self.interactions.with_columns(
-                pl.lit(1).alias("interaction_score")  # Add binary interaction column
-            ).pivot(
-                values="interaction_score",
-                index="user_id",
-                columns="article_id"
-            ).fill_null(0)
-        else:
-            user_item_matrix = self.interactions.pivot(
-            values="interaction_score",
-            index="user_id",
-            columns="article_id"
-            ).fill_null(0)
+        # Create user-item matrix
+        user_item_matrix = self.interactions.with_columns(
+            pl.lit(1).alias("interaction_score") if self.binary_model else pl.col("interaction_score")
+        ).pivot(values="interaction_score", index="user_id", columns="article_id").fill_null(0)
 
         user_ids = user_item_matrix["user_id"].to_list()
         user_vectors = user_item_matrix.drop("user_id").to_numpy()
 
-        # Compute cosine similarity matrix
+        # Compute similarity matrix and get top `sim_size` similar users
         similarity_matrix = 1 - squareform(pdist(user_vectors, metric='cosine'))
-
-        # Store top `sim_size` most similar users for each user
         top_similarities = np.argsort(-similarity_matrix, axis=1)[:, 1:sim_size + 1]
+
+        # Store the most similar users for each user
         self.user_similarity_matrix = {
             user_ids[i]: [(user_ids[j], similarity_matrix[i, j]) for j in top_similarities[i]]
             for i in range(len(user_ids))
