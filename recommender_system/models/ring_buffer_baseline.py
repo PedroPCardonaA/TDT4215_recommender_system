@@ -2,6 +2,7 @@ import polars as pl
 from typing import List, Any
 import datetime
 import numpy as np
+import matplotlib.pyplot as plt
 
 class RingBuffer:
     """
@@ -246,52 +247,6 @@ class RingBufferBaseline:
         avg_fpr = np.mean(fprs) if fprs else 0.0
         
         return {"precision": avg_precision, "recall": avg_recall, "fpr": avg_fpr}
-
-    def roc_curve(self, test_data: pl.DataFrame, max_k: int = 10) -> dict:
-        """
-        Compute ROC curve coordinates (FPR and TPR) for thresholds from 1 to max_k.
-        
-        For each cutoff k, for each user the True Positive Rate (TPR) is the recall and
-        the False Positive Rate (FPR) is computed based on the candidate set (all article_ids in test_data).
-        The final ROC curve is obtained by averaging over all users.
-        
-        Args:
-            test_data (pl.DataFrame): Test interactions DataFrame.
-            max_k (int): Maximum cutoff value to consider.
-        
-        Returns:
-            dict: A dictionary with keys "fpr" and "tpr", each a list of values for cutoffs 1...max_k.
-        """
-        candidate_set = set(test_data.select("article_id").unique().to_numpy().flatten())
-        user_ids = test_data.select("user_id").unique().to_numpy().flatten()
-        roc_fpr = []
-        roc_tpr = []
-        
-        for k in range(1, max_k + 1):
-            user_fpr = []
-            user_tpr = []
-            for user in user_ids:
-                user_test = test_data.filter(pl.col("user_id") == user)
-                relevant_items = set(user_test.select("article_id").to_numpy().flatten())
-                if not relevant_items:
-                    continue
-
-                recommended_items = self.recommend(user, n=k)
-                # Compute TPR (recall).
-                tp = sum(1 for item in recommended_items if item in relevant_items)
-                tpr = tp / len(relevant_items)
-                # Compute FPR.
-                negatives = candidate_set - relevant_items
-                fp = sum(1 for item in recommended_items if item not in relevant_items)
-                fpr = fp / len(negatives) if negatives else 0.0
-
-                user_tpr.append(tpr)
-                user_fpr.append(fpr)
-            # Average over users.
-            roc_tpr.append(np.mean(user_tpr) if user_tpr else 0.0)
-            roc_fpr.append(np.mean(user_fpr) if user_fpr else 0.0)
-        
-        return {"fpr": roc_fpr, "tpr": roc_tpr}
 
 
     def reset_buffer(self):
