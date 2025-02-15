@@ -4,7 +4,7 @@ from scipy.spatial.distance import pdist, squareform
 from joblib import Parallel, delayed
 
 class CollaborativeRecommender:
-    def __init__(self, impressions: pl.DataFrame, scroll_percentage_weight=1, read_time_weight=1):
+    def __init__(self, impressions: pl.DataFrame):
         '''
         Initialize the CollaborativeRecommender with a user-item dataframe.
 
@@ -12,32 +12,38 @@ class CollaborativeRecommender:
         ----------
         impressions : pl.DataFrame
             A DataFrame containing user interactions with articles.
-        scroll_percentage_weight : float, optional
-            The weight for the scroll percentage in the impression score.
-        read_time_weight : float, optional
-            The weight for the read time in the impression score.
         '''
         self.impressions = impressions
-        self.scroll_percentage_weight = scroll_percentage_weight
-        self.read_time_weight = read_time_weight
         self.user_similarity_matrix = {}
 
-    def add_impression_scores(self) -> pl.DataFrame:
-        '''
-        Adds an impression score column to the `impressions` DataFrame.
+    def add_impression_scores(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0) -> pl.DataFrame:
+        """
+        Computes and adds an `impression_score` column to the `impressions` DataFrame.
+
+        The impression score is calculated as a weighted sum of the `max_scroll` and `total_readtime` columns:
+        
+            impression_score = (max_scroll * scroll_weight) + (total_readtime * readtime_weight)
+
+        Parameters
+        ----------
+        scroll_weight : float, optional
+            The weight assigned to the `max_scroll` column (default is 1.0).
+        readtime_weight : float, optional
+            The weight assigned to the `total_readtime` column (default is 1.0).
 
         Returns
         -------
         pl.DataFrame
-            A DataFrame with an additional column `impression_score`.
-        '''
+            A DataFrame with an additional `impression_score` column.
+        """
         self.impressions = self.impressions.with_columns(
             (
-                pl.col("max_scroll") * self.scroll_percentage_weight +
-                pl.col("total_readtime") * self.read_time_weight
+                pl.col("max_scroll") * scroll_weight +
+                pl.col("total_readtime") * readtime_weight
             ).alias("impression_score")
         )
         return self.impressions
+
 
     def build_user_similarity_matrix(self, sim_size=10):
         '''
