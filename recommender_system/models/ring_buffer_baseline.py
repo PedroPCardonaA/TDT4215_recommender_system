@@ -165,9 +165,8 @@ class RingBufferBaseline:
         #print("User behaviors for user", user_id, ":\n", user_behaviors) # DEBUG
         
         if len(user_behaviors) == 0:
-            # If the user has no behaviors, fall back to the most popular articles.
             recommendations = self.ring_buffer.get_most_popular(n)
-            return [article[1] for article in recommendations]
+            return recommendations
         
         # Determine the article the user is currently viewing (most recent behavior).
         current_article = user_behaviors.sort("impression_time", descending=True) \
