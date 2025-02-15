@@ -1,0 +1,246 @@
+import polars as pl
+from typing import List, Any
+import datetime
+
+class RingBuffer:
+    """
+    A simple ring buffer implementation.
+    """
+    def __init__(self, size: int):
+        """
+        Initialize the ring buffer with a given size.
+        
+        Args:
+            size (int): The size of the ring buffer.
+        """
+        self.size = size
+        self.buffer = [None] * size
+        self.index = 0
+
+    def append(self, item: Any):
+        """
+        Append an item to the ring buffer.
+        
+        Args:
+            item: The item to append.
+        """
+        self.buffer[self.index] = item
+        self.index = (self.index + 1) % self.size
+
+    def get(self) -> List[Any]:
+        """
+        Get the items in the ring buffer.
+        
+        Returns:
+            List: The items in the ring buffer.
+        """
+        return [item for item in self.buffer if item is not None]
+
+    def get_by_index(self, index: int) -> Any:
+        """
+        Get the item at a specific index in the ring buffer.
+        
+        Args:
+            index (int): The index of the item.
+        
+        Returns:
+            Any: The item at the specified index.
+        """
+        return self.buffer[index]
+
+    def get_most_popular(self, n: int) -> List[Any]:
+        """
+        Get the N most popular items in the ring buffer.
+        """
+        items = self.get()
+        article_counts = {}
+        for item in items:
+            # Check if the article_id is valid before counting.
+            article_id = item[1]
+            if article_id is None:
+                continue
+            article_counts[article_id] = article_counts.get(article_id, 0) + 1
+        return sorted(article_counts, key=article_counts.get, reverse=True)[:n]
+
+
+    def clear(self):
+        """
+        Clears the ring buffer.
+        """
+        self.buffer = [None] * self.size
+        self.index = 0
+
+    def get_most_recent(self, n: int) -> List[Any]:
+        """
+        Retrieves the most recent N items from the ring buffer.
+        
+        Args:
+            n (int): The number of recent items to retrieve.
+        
+        Returns:
+            List: The most recent N items.
+        """
+        items = self.get()
+        return items[-n:] if len(items) >= n else items
+
+    def __iter__(self):
+        """
+        Get an iterator over the items in the ring buffer.
+        
+        Returns:
+            Iterator: An iterator over the items in the ring buffer.
+        """
+        return iter(self.get())
+
+    def __len__(self) -> int:
+        """
+        Get the number of items in the ring buffer.
+        
+        Returns:
+            int: The number of items in the ring buffer.
+        """
+        return len(self.get())
+
+class RingBufferBaseline:
+    """
+    Implements a simple recommender system that uses a ring buffer to store the last N items.
+    This approach enforces both recency and popularity when recommending news articles.
+    """
+    def __init__(self, n: int = 10, behaviors: pl.DataFrame = None):
+        """
+        Initializes the recommender system with a ring buffer of size N.
+        
+        Args:
+            n (int): The size of the ring buffer.
+            behaviors (pl.DataFrame): A DataFrame containing user behavior data.
+        """
+        self.n = n
+        self.ring_buffer = RingBuffer(n)
+        if behaviors is not None:
+            # Utilizes provided behaviors and sorts them by impression time in descending order.
+            self.behaviors = behaviors.sort("impression_time", descending=True)
+        else:
+            self.behaviors = pl.DataFrame()
+
+    def fit(self):
+        """
+        Fit the recommender system by adding all articles to the ring buffer.
+        """
+        for i in range(len(self.behaviors)):
+            # Appends each row to the ring buffer.
+            self.ring_buffer.append(self.behaviors.row(i))
+
+    def add_behavior(self, new_behavior: List[Any]):
+        """
+        Adds a new behavior to both the behaviors DataFrame and the ring buffer.
+        
+        Args:
+            new_behavior (List[Any]): A list representing a new behavior entry.
+        """
+        # Appends the new behavior to the ring buffer.
+        self.ring_buffer.append(new_behavior)
+        # Concatenates the new behavior to the behaviors DataFrame.
+        if self.behaviors.shape[0] > 0:
+            new_df = pl.DataFrame([new_behavior], schema=self.behaviors.columns)
+            self.behaviors = self.behaviors.vstack(new_df)
+        else:
+            self.behaviors = pl.DataFrame([new_behavior])
+
+    def recommend(self, user_id: int, n: int = 5) -> List[Any]:
+        """
+        Recommend the top N articles for a given user.
+        The recommendation logic starts at the most recent item in the ring buffer
+        (position index - 1) and walks backwards until it finds articles that are different
+        from the article the user is currently viewing.
+        
+        Args:
+            user_id (int): The user ID.
+            n (int): The number of articles to recommend.
+        
+        Returns:
+            List: The top N recommended article ids.
+        """
+        # Filters behaviors for the specified user.
+        user_behaviors = self.behaviors.filter(pl.col("user_id") == user_id)
+        #print("User behaviors for user", user_id, ":\n", user_behaviors) # DEBUG
+        
+        if len(user_behaviors) == 0:
+            # If the user has no behaviors, fall back to the most popular articles.
+            recommendations = self.ring_buffer.get_most_popular(n)
+            return [article[1] for article in recommendations]
+        
+        # Determine the article the user is currently viewing (most recent behavior).
+        current_article = user_behaviors.sort("impression_time", descending=True) \
+                                        .select("article_id").row(0)[0]
+        
+        recommended_articles = []
+        ring_size = self.ring_buffer.size
+
+        # Walk backwards through the ring buffer from the most recent insertion.
+        for i in range(ring_size):
+            pos = (self.ring_buffer.index - 1 - i) % ring_size
+            article = self.ring_buffer.get_by_index(pos)
+            # Only consider non-None articles.
+            if article is not None:
+                # Skip if this article is the one the user is currently viewing.
+                if article[1] == current_article:
+                    continue
+                recommended_articles.append(article)
+                if len(recommended_articles) == n:
+                    break
+
+        # Return only the article ids (assumed to be at index 1)
+        return [article[1] for article in recommended_articles]
+
+
+    def reset_buffer(self):
+        """
+        Resets the ring buffer, clearing all stored behaviors.
+        """
+        self.ring_buffer.clear()
+
+def main(): # TESTING
+    # Creates a sample dataset resembling the EB-NeRD news dataset.
+    # The dataset includes columns: impression_id, article_id, impression_time, and user_id.
+    data = {
+        "impression_id": [1, 2, 3, 4, 5],
+        "article_id": [100, 101, 102, 102, 104],
+        "impression_time": [
+            datetime.datetime(2025, 2, 14, 10, 0, 0),
+            datetime.datetime(2025, 2, 14, 10, 1, 0),
+            datetime.datetime(2025, 2, 14, 10, 2, 0),
+            datetime.datetime(2025, 2, 14, 10, 3, 0),
+            datetime.datetime(2025, 2, 14, 10, 4, 0)
+        ],
+        "user_id": [123, 456, 123, 789, 123]
+    }
+    # Creates a Polars DataFrame from the sample data.
+    df = pl.DataFrame(data)
+    print("Sample DataFrame:")
+    print(df)
+
+    # Initializes the recommender system with the sample DataFrame.
+    recommender = RingBufferBaseline(behaviors=df)
+    # Fits the recommender system (populates the ring buffer).
+    recommender.fit()
+
+    # Prints the content of the ring buffer.
+    print("\nRing Buffer Content:")
+    for item in recommender.ring_buffer.get():
+         print(item)
+
+    # Retrieves recommendations for a user who has behavior (user_id=123).
+    recommendations = recommender.recommend(user_id=123, n=5)
+    print("\nRecommended articles for user 123:")
+    for rec in recommendations:
+         print(rec)
+         
+    # Retrieves recommendations for a user with no behavior (user_id=999).
+    recommendations_no = recommender.recommend(user_id=999, n=5)
+    print("\nRecommended articles for user 999 (no behavior):")
+    for rec in recommendations_no:
+         print(rec)
+
+# Executes main() if this script is run directly.
+if __name__ == '__main__':
+    main()
