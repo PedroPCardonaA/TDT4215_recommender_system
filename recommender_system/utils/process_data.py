@@ -49,3 +49,24 @@ def user_item_interaction_scores(behaviors: pl.DataFrame, article: pl.DataFrame)
     behaviors = behaviors.drop([ "published_time_norm"])
     
     return behaviors
+
+
+def user_item_binary_interaction(
+    behaviors: pl.DataFrame, users: pl.DataFrame, articles: pl.DataFrame
+) -> pl.DataFrame:
+    # Select only necessary columns
+    users = users.select(["user_id"])
+    articles = articles.select(["article_id"])
+    
+    # Create a cross join to generate all possible (user, article) pairs
+    user_article_pairs = users.join(articles, how="cross")
+    
+    # Ensure behaviors has only relevant columns
+    behaviors = behaviors.select(["user_id", "article_id"]).with_columns(pl.lit(1).alias("clicked"))
+    
+    # Left join user-article pairs with behaviors to mark interactions
+    interaction_matrix = user_article_pairs.join(
+        behaviors, on=["user_id", "article_id"], how="left"
+    ).fill_null(0)
+    
+    return interaction_matrix
