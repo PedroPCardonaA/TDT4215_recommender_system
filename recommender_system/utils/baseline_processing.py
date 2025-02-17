@@ -13,17 +13,17 @@ def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame) -> pl.D
     Returns:
         pl.DataFrame: A combined DataFrame with processed behaviors.
     """
-    # Process training data.
+    # Processes training data
     processed_train_df = train_df.explode("article_ids_clicked")
     processed_train_df = processed_train_df.filter(pl.col("article_ids_clicked").is_not_null())
-    processed_train_df = processed_train_df.filter(pl.col("article_id").is_not_null())  # TODO: IMPORTANT
+    processed_train_df = processed_train_df.filter(pl.col("article_id").is_not_null())
 
-    # Process testing data.
+    # Processes testing data
     processed_test_df = test_df.explode("article_ids_clicked")
     processed_test_df = processed_test_df.filter(pl.col("article_ids_clicked").is_not_null())
     processed_test_df = processed_test_df.filter(pl.col("article_id").is_not_null())
 
-    # Concatenate processed data.
+    # Concatenates processed data
     combined_df = pl.concat([processed_train_df, processed_test_df])
     return combined_df
 
