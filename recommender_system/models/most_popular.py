@@ -1,5 +1,6 @@
 import polars as pl
 from typing import List
+import numpy as np
 
 class MostPopularRecommender:
     """
@@ -23,9 +24,9 @@ class MostPopularRecommender:
         # Stores the sorted list of article IDs
         self.top_articles = popularity["article_ids_clicked"]
 
-    def recommend(self, user_id: int, k: int = 5) -> List[int]: 
+    def recommend(self, user_id: int, n: int = 5) -> List[int]: 
         """
         Returns the top-k most popular articles for to any user,
         this means jsut the basic most popular articles based on the click count.
         """
-        return self.top_articles[:k]
+        return self.top_articles[:n]
