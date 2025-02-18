@@ -63,29 +63,26 @@ class ItemBasedCollaborativeRecommender:
         -------
         dict
             A dictionary of lists where the keys are article IDs and the values in the lists are 
-            `sim_size` instances of the most similar articles, sorted by similarity.
+            `sim_size` instances of the most similar articles and their similarity score, sorted by similarity.
         '''
-        # Create a numeric matrix of articles where each row corresponds to an article
-        # and each column corresponds to a topic (True/False -> 1/0)
         topic_columns = [col for col in self.items.columns if col.startswith('topic_')]
-        article_vectors = self.items[topic_columns].to_numpy()  # Extract topic columns as a numpy array
+        article_vectors = self.items[topic_columns].to_numpy()
 
-        # Initialize the dictionary to store most similar articles
+        # Compute cosine similarity for all pairs at once
+        pairwise_similarities = 1 - squareform(pdist(article_vectors, metric="cosine"))
+
         item_similarity_matrix = {}
 
-        # Iterate over each article and calculate similarity with every other article
-        for i, article_1 in enumerate(self.items['article_id']):
-            similarities = []
+        article_ids = self.items["article_id"].to_list()
+        
+        # Iterate over each article and get top-N most similar articles with their scores
+        for i, article_id in enumerate(article_ids):
+            similar_articles = sorted(
+                zip(article_ids, pairwise_similarities[i]),
+                key=lambda x: x[1], reverse=True
+            )[1:sim_size+1]  # Skip itself (first item)
 
-            # Calculate cosine similarity with every other article
-            for j, article_2 in enumerate(self.items['article_id']):
-                if i != j:
-                    sim = 1 - cosine(article_vectors[i], article_vectors[j])  # Cosine similarity between articles
-                    similarities.append((self.items['article_id'][j], sim))  # Store (article_id, similarity)
-
-            # Sort the similarities in descending order and select the most similar articles
-            similarities.sort(key=lambda x: x[1], reverse=True)
-            item_similarity_matrix[article_1] = [sim[0] for sim in similarities[:sim_size]]  # Keep only the article ids
+            item_similarity_matrix[article_id] = [(sim[0], np.float64(sim[1])) for sim in similar_articles]
 
         return item_similarity_matrix
 
