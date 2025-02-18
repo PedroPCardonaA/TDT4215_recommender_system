@@ -67,22 +67,20 @@ class ItemBasedCollaborativeRecommender:
         '''
         topic_columns = [col for col in self.items.columns if col.startswith('topic_')]
         article_vectors = self.items[topic_columns].to_numpy()
-
-        # Compute cosine similarity for all pairs at once
         pairwise_similarities = 1 - squareform(pdist(article_vectors, metric="cosine"))
 
         item_similarity_matrix = {}
-
         article_ids = self.items["article_id"].to_list()
         
-        # Iterate over each article and get top-N most similar articles with their scores
         for i, article_id in enumerate(article_ids):
             similar_articles = sorted(
                 zip(article_ids, pairwise_similarities[i]),
                 key=lambda x: x[1], reverse=True
-            )[1:sim_size+1]  # Skip itself (first item)
+            )[1:sim_size+1]
 
             item_similarity_matrix[article_id] = [(sim[0], np.float64(sim[1])) for sim in similar_articles]
+    
+        self.item_similarity_matrix = item_similarity_matrix
 
         return item_similarity_matrix
 
@@ -95,7 +93,8 @@ class ItemBasedCollaborativeRecommender:
         dict
             The item-item similarity matrix.
         '''
-        self.add_interaction_scores() if not self.binary_model else None
+        if not self.binary_model:
+            self.add_interaction_scores()
         return self.build_item_similarity_matrix()
 
     def recommend_n_articles(self, user_id: int, n: int, allow_read_articles=False) -> list[int]:
@@ -121,25 +120,21 @@ class ItemBasedCollaborativeRecommender:
             self.interactions.filter(pl.col("user_id") == user_id)["article_id"].to_list()
         )
 
-        # Get articles' interactions
         user_articles = self.interactions.filter(pl.col("user_id") == user_id)
+        user_articles = user_articles.sort("interaction_score", descending=True)
 
-        # Aggregate interaction scores for each article
         article_scores = {}
-        for article_id in user_articles["article_id"]:
+
+        for article_id, interaction_score in zip(user_articles["article_id"], user_articles["interaction_score"]):
             similar_items = self.item_similarity_matrix.get(article_id, [])
             for sim_item_id, sim_score in similar_items:
-                # If the article isn't already read and it isn't the same article
-                if sim_item_id not in read_articles:
-                    if sim_item_id not in article_scores:
-                        article_scores[sim_item_id] = 0
-                    # Aggregate the scores based on interaction
-                    interaction_score = user_articles.filter(pl.col("article_id") == article_id)["interaction_score"].to_numpy()[0]
-                    article_scores[sim_item_id] += interaction_score * sim_score
+                if allow_read_articles or sim_item_id not in read_articles:
+                    article_scores[sim_item_id] = article_scores.get(sim_item_id, 0) + interaction_score * sim_score
 
-        # Sort by total score and select top n articles
+            if len(article_scores) >= n:
+                break  # Stop once we have enough recommendations
+
         recommended_articles = sorted(article_scores.items(), key=lambda x: x[1], reverse=True)[:n]
-
         return [item[0] for item in recommended_articles]
 
     def precision_at_k(self, recommended_items, relevant_items, k=5):
