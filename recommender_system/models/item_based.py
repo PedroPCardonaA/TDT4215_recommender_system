@@ -128,7 +128,7 @@ class CollaborativeRecommender:
         similar_user_articles = self.interactions.filter(pl.col("user_id").is_in(similar_users))
 
         # Aggregate interaction scores for each article
-        article_scores = similar_user_articles.group_by("article_id").agg(
+        article_scores = similar_user_articles.groupby("article_id").agg(
             pl.len().alias("total_score") if self.binary_model else pl.col("interaction_score").sum().alias("total_score")
         )
 
