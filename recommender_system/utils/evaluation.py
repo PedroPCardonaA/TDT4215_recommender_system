@@ -7,14 +7,15 @@ def evaluate_recommender(model: Any, test_data: pl.DataFrame, k: int = 5) -> dic
     Evaluate a recommender model using precision, recall, and FPR at k.
 
     For each user in the test set, relevant items are defined as the set of article_ids
-    that the user has in the test data. The model's recommendations (obtained via 
-    model.recommend(user_id, n=k)) are then compared against these relevant items.
-    The candidate set for negatives is defined as all unique article_ids in test_data.
+    that the user has in the test data. The model's recommendations (obtained via either 
+    model.recommend(user_id, n=k) or model.recommend_n_articles(user_id, n=k)) are then compared
+    against these relevant items. The candidate set for negatives is defined as all unique article_ids
+    in test_data.
 
     Parameters
     ----------
     model : Any
-        A recommender model with a recommend(user_id, n) method.
+        A recommender model with a recommend(user_id, n) or recommend_n_articles(user_id, n) method.
     test_data : pl.DataFrame
         A DataFrame containing test interactions (must include "user_id" and "article_id" columns).
     k : int, optional
@@ -23,8 +24,16 @@ def evaluate_recommender(model: Any, test_data: pl.DataFrame, k: int = 5) -> dic
     Returns
     -------
     dict
-        A dictionary with average precision, recall, and FPR.
+        A dictionary with average precision@k, recall@k, and FPR@k.
     """
+    # Determine which recommendation method to use.
+    if hasattr(model, "recommend"):
+        rec_func = model.recommend
+    elif hasattr(model, "recommend_n_articles"):
+        rec_func = model.recommend_n_articles
+    else:
+        raise ValueError("Model must have a 'recommend' or 'recommend_n_articles' method.")
+
     # Candidate set: all unique article IDs in test_data.
     candidate_set = set(test_data.select("article_id").unique().to_numpy().flatten())
     
@@ -41,8 +50,8 @@ def evaluate_recommender(model: Any, test_data: pl.DataFrame, k: int = 5) -> dic
         if not relevant_items:
             continue
 
-        # Get recommendations from the model for this user.
-        recommended_items = model.recommend(user, n=k)
+        # Get recommendations for this user using the determined recommendation function.
+        recommended_items = rec_func(user, n=k)
         
         # Compute hits.
         hits = sum(1 for item in recommended_items if item in relevant_items)
@@ -62,4 +71,4 @@ def evaluate_recommender(model: Any, test_data: pl.DataFrame, k: int = 5) -> dic
     avg_recall = np.mean(recalls) if recalls else 0.0
     avg_fpr = np.mean(fprs) if fprs else 0.0
     
-    return {"precision": avg_precision, "recall": avg_recall, "fpr": avg_fpr}
+    return {"precision@k": avg_precision, "recall@k": avg_recall, "fpr@k": avg_fpr}
