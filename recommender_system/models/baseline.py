@@ -2,18 +2,49 @@ import numpy as np
 import polars as pl
 from joblib import Parallel, delayed
 
+
 class UserItemBiasRecommender:
+    """
+    Implements a baseline user–item bias recommender.
+
+    This model pivots a long-format user–item interaction DataFrame into a wide matrix,
+    computes a global mean rating, and derives user and item biases. These biases are then
+    used to predict ratings and generate recommendations.
+    """
+
     def __init__(self, user_item_df: pl.DataFrame):
         """
-        Initialize the recommender system using a long-format user-item interaction dataframe.
-        Expected schema:
-            - user_id (UInt32)
-            - article_id (Int32)
-            - impression_time (Datetime with microsecond precision)
-            - score (Float64)
-            
-        The constructor pivots the long dataframe into a wide user-item matrix (using mean aggregation)
-        and fills missing interactions with 0.
+        Initialize the recommender using a long-format user–item interaction DataFrame.
+
+        The constructor pivots the input DataFrame into a wide user–item matrix using mean
+        aggregation and fills missing interactions with 0. The expected input DataFrame should
+        include the following columns:
+          - `user_id` (UInt32)
+          - `article_id` (Int32)
+          - `impression_time` (Datetime with microsecond precision)
+          - `score` (Float64)
+
+        Parameters
+        ----------
+        user_item_df : pl.DataFrame
+            Long-format DataFrame containing user–item interactions.
+
+        Attributes
+        ----------
+        user_ids : list
+            List of user IDs.
+        item_ids : list
+            List of item IDs.
+        user_id_to_index : dict
+            Mapping from user ID to its corresponding matrix row index.
+        user_item_matrix : np.ndarray
+            Wide user–item matrix with ratings as float32.
+        global_mean : float
+            Global mean rating computed during fitting.
+        user_biases : np.ndarray or None
+            Array of user biases.
+        item_biases : np.ndarray or None
+            Array of item biases.
         """
         wide_df = user_item_df.pivot(
             values="score",
@@ -21,7 +52,6 @@ class UserItemBiasRecommender:
             columns="article_id",
             aggregate_function="mean"
         )
-
         wide_df = wide_df.fill_null(0)
         self.user_ids = wide_df["user_id"].to_list()
         self.item_ids = [int(col) for col in wide_df.columns if col != "user_id"]
@@ -29,7 +59,7 @@ class UserItemBiasRecommender:
         self.user_item_matrix = wide_df.select(
             [str(col) for col in self.item_ids]
         ).to_numpy().astype(np.float32)
-        
+
         self.similarity_matrix = None
         self.global_mean = 0.0
         self.user_biases = None
@@ -37,7 +67,11 @@ class UserItemBiasRecommender:
 
     def fit(self):
         """
-        Compute global mean, then user biases, then item biases.
+        Fit the model by computing the global mean, user biases, and item biases.
+
+        The method calculates the global mean from non-zero ratings, then computes user biases
+        as the average deviation of a user's ratings from the global mean. It then adjusts the
+        item ratings by removing both the global mean and the user bias to compute item biases.
         """
         nonzero_ratings = self.user_item_matrix[self.user_item_matrix != 0]
         if nonzero_ratings.size > 0:
@@ -58,13 +92,34 @@ class UserItemBiasRecommender:
             item_column = self.user_item_matrix[:, i]
             rated_idx = item_column != 0
             if np.any(rated_idx):
-                self.item_biases[i] = (item_column[rated_idx] 
-                                       - self.global_mean 
+                self.item_biases[i] = (item_column[rated_idx]
+                                       - self.global_mean
                                        - self.user_biases[rated_idx]).mean()
 
     def recommend(self, user_id, n=5):
         """
-        Recommend the top-N items (by predicted score) that the user has not interacted with.
+        Recommend the top-N items for a given user that have not been previously interacted with.
+
+        The method predicts scores for all items that the user has not rated using:
+            r̂(u, i) = global_mean + user_bias + item_bias
+        and returns the items with the highest predicted scores.
+
+        Parameters
+        ----------
+        user_id : int
+            The identifier for the user.
+        n : int, optional
+            Number of items to recommend (default is 5).
+
+        Returns
+        -------
+        list
+            List of item IDs corresponding to the top-N recommendations.
+
+        Raises
+        ------
+        ValueError
+            If the model is not fitted or the `user_id` is not found.
         """
         if self.user_biases is None or self.item_biases is None:
             raise ValueError("The model must be fitted before making recommendations.")
@@ -78,8 +133,8 @@ class UserItemBiasRecommender:
 
         scores = []
         for idx in unused_indices:
-            predicted_score = (self.global_mean 
-                               + self.user_biases[user_index] 
+            predicted_score = (self.global_mean
+                               + self.user_biases[user_index]
                                + self.item_biases[idx])
             scores.append((self.item_ids[idx], predicted_score))
         scores.sort(key=lambda x: x[1], reverse=True)
@@ -88,7 +143,22 @@ class UserItemBiasRecommender:
 
     def user_ratings(self, user_id):
         """
-        Retrieve all ratings (interactions) for a given user.
+        Retrieve all ratings (interactions) for a specified user.
+
+        Parameters
+        ----------
+        user_id : int
+            The identifier for the user.
+
+        Returns
+        -------
+        np.ndarray
+            Array of ratings corresponding to the user.
+
+        Raises
+        ------
+        ValueError
+            If the user is not found in the dataset.
         """
         user_index = self.user_id_to_index.get(user_id)
         if user_index is None:
@@ -97,8 +167,27 @@ class UserItemBiasRecommender:
 
     def predict(self, user_id, item_id):
         """
-        Predict the (implicit or explicit) rating for a given user and item using:
-            r_hat(u, i) = mu + b_u + b_i
+        Predict the rating for a given user–item pair.
+
+        The prediction is computed as:
+            r̂(u, i) = global_mean + user_bias + item_bias
+
+        Parameters
+        ----------
+        user_id : int
+            The identifier for the user.
+        item_id : int
+            The identifier for the item.
+
+        Returns
+        -------
+        float
+            The predicted rating.
+
+        Raises
+        ------
+        ValueError
+            If the model is not fitted or if the `user_id`/`item_id` is not found.
         """
         if self.user_biases is None or self.item_biases is None:
             raise ValueError("The model must be fitted before making predictions.")
@@ -111,14 +200,30 @@ class UserItemBiasRecommender:
 
         item_index = self.item_ids.index(item_id)
         return float(
-            self.global_mean 
-            + self.user_biases[user_index] 
+            self.global_mean
+            + self.user_biases[user_index]
             + self.item_biases[item_index]
         )
-    
+
     def precision_at_k(self, recommended_items, relevant_items, k=5):
         """
-        Compute Precision@K for a given list of recommended items and a set of relevant items.
+        Compute the Precision@K for a set of recommendations.
+
+        Precision@K is the proportion of the top K recommended items that are relevant.
+
+        Parameters
+        ----------
+        recommended_items : list
+            List of recommended item IDs.
+        relevant_items : set
+            Set of relevant item IDs.
+        k : int, optional
+            Number of top recommendations to consider (default is 5).
+
+        Returns
+        -------
+        float
+            The Precision@K value.
         """
         if not relevant_items:
             return 0.0
@@ -128,11 +233,27 @@ class UserItemBiasRecommender:
 
     def ndcg_at_k(self, recommended_items, relevant_items, k=5):
         """
-        Compute Normalized Discounted Cumulative Gain (NDCG) at K.
+        Compute the Normalized Discounted Cumulative Gain (NDCG) at K.
+
+        NDCG@K assesses ranking quality by measuring the position of relevant items in the top K.
+
+        Parameters
+        ----------
+        recommended_items : list
+            List of recommended item IDs.
+        relevant_items : set
+            Set of relevant item IDs.
+        k : int, optional
+            Number of top recommendations to consider (default is 5).
+
+        Returns
+        -------
+        float
+            The NDCG@K value.
         """
         def dcg(scores):
             return sum(score / np.log2(idx + 2) for idx, score in enumerate(scores))
-        
+
         recommended_at_k = recommended_items[:k]
         gains = [1 if item in relevant_items else 0 for item in recommended_at_k]
         ideal_gains = sorted([1] * len(relevant_items) + [0] * (k - len(relevant_items)), reverse=True)
@@ -142,12 +263,28 @@ class UserItemBiasRecommender:
 
     def compute_user_metrics(self, user_id, test_data: pl.DataFrame, k=5):
         """
-        Compute Precision@K and NDCG@K for a single user based on test interactions.
-        The test_data should be a long-format dataframe with at least "user_id" and "article_id" columns.
+        Compute Precision@K and NDCG@K metrics for a single user based on test interactions.
+
+        The method filters the test data for the specified user, generates recommendations,
+        and calculates both metrics.
+
+        Parameters
+        ----------
+        user_id : int
+            The identifier for the user.
+        test_data : pl.DataFrame
+            Long-format DataFrame with at least the columns "user_id" and "article_id".
+        k : int, optional
+            Number of top recommendations to consider (default is 5).
+
+        Returns
+        -------
+        tuple or None
+            A tuple (precision, ndcg) if relevant interactions exist; otherwise, None.
         """
         relevant_items = set(test_data.filter(pl.col("user_id") == user_id)["article_id"].to_numpy())
         if not relevant_items:
-            return None 
+            return None
 
         recommended_items = self.recommend(user_id, n=k)
         precision = self.precision_at_k(recommended_items, relevant_items, k)
@@ -156,46 +293,69 @@ class UserItemBiasRecommender:
 
     def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None):
         """
-        Evaluate the recommender using Precision@K and NDCG@K in parallel on a sample of users.
-        test_data must be a long-format dataframe with columns "user_id" and "article_id".
-        Only users that exist in the training set (self.user_ids) are considered.
+        Evaluate the recommender's performance across multiple users in parallel.
+
+        The method filters test users to those present in the training set, optionally samples
+        a subset of users, and aggregates Precision@K and NDCG@K metrics.
+
+        Parameters
+        ----------
+        test_data : pl.DataFrame
+            Long-format DataFrame with columns "user_id" and "article_id".
+        k : int, optional
+            Number of top recommendations to consider per user (default is 5).
+        n_jobs : int, optional
+            Number of parallel jobs to run (default is -1 to use all available processors).
+        user_sample : int, optional
+            Number of users to sample for evaluation (if None, all eligible users are evaluated).
+
+        Returns
+        -------
+        dict
+            Dictionary containing average "Precision@K" and "NDCG@K" scores.
         """
-        # Get unique user IDs from the test data
+        # Extract unique user IDs from the test data.
         user_ids = test_data["user_id"].unique().to_numpy()
-        # Filter user IDs to only include those present in the model
+        # Filter user IDs to retain only those present in the model.
         user_ids = np.array([u for u in user_ids if u in self.user_id_to_index])
-        
+
         if user_sample is not None and user_sample < len(user_ids):
             user_ids = np.random.choice(user_ids, size=user_sample, replace=False)
-        
+
         results = Parallel(n_jobs=n_jobs)(
             delayed(self.compute_user_metrics)(user_id, test_data, k) for user_id in user_ids
         )
-        
-        # Filter out users with no test interactions (or where compute_user_metrics returned None)
+
+        # Exclude users with no test interactions.
         results = [res for res in results if res is not None]
         if not results:
             return {"Precision@K": 0.0, "NDCG@K": 0.0}
-        
+
         precisions, ndcgs = zip(*results)
         return {"Precision@K": np.mean(precisions), "NDCG@K": np.mean(ndcgs)}
 
-
     def aggregate_diversity(self, item_df, k=5, user_sample=None, random_seed=42):
         """
-        Compute the Aggregate Diversity (Catalog Coverage) of the recommendations.
+        Compute the aggregate diversity (catalog coverage) of the recommendations.
 
-        This metric calculates the percentage of unique items recommended across all users,
-        indicating how well the recommender system spreads recommendations across the entire catalog.
+        The metric measures the fraction of the total catalog that has been recommended
+        across all users.
 
-        Parameters:
-        - item_df: polars.DataFrame, containing at least the "article_id" column (full catalog of items).
-        - k: int, number of top recommendations per user.
-        - user_sample: int, optional, number of users to sample for evaluation.
-        - random_seed: int, seed for reproducibility when sampling users.
+        Parameters
+        ----------
+        item_df : pl.DataFrame
+            DataFrame containing at least the "article_id" column (the full catalog of items).
+        k : int, optional
+            Number of top recommendations per user (default is 5).
+        user_sample : int, optional
+            Number of users to sample for evaluation (if None, all users are evaluated).
+        random_seed : int, optional
+            Seed for reproducibility when sampling users (default is 42).
 
-        Returns:
-        - float: Aggregate diversity, i.e., the fraction of the total catalog that has been recommended.
+        Returns
+        -------
+        float
+            The aggregate diversity as the fraction of the catalog that is recommended.
         """
         np.random.seed(random_seed)
 
@@ -208,8 +368,7 @@ class UserItemBiasRecommender:
         for user_id in users:
             recommended_items.update(self.recommend(user_id, n=k))
 
-        total_items = set(item_df["article_id"].to_numpy())  
+        total_items = set(item_df["article_id"].to_numpy())
         aggregate_diversity = len(recommended_items) / len(total_items) if total_items else 0.0
 
         return aggregate_diversity
-    
