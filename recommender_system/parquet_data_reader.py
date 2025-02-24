@@ -15,15 +15,23 @@ class ParquetDataReader:
         """
         Read the Parquet file and return the DataFrame.
 
-        Args:
-            path (str): Path to the Parquet file.
+        Parameters
+        ----------
+        path : str
+            Path to the Parquet file.
 
-        Returns:
-            pd.DataFrame: The DataFrame containing the Parquet data.
+        Returns
+        -------
+        pl.DataFrame
+            The DataFrame containing the Parquet data.
+
+        Raises
+        ------
+        ValueError
+            If the Parquet file cannot be read.
         """
         try:
             df = pl.read_parquet(path)
             return df
         except Exception as e:
             raise ValueError(f"Failed to read the Parquet file: {e}")
-

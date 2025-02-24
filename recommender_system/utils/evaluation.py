@@ -11,14 +11,19 @@ def evaluate_recommender(model: Any, test_data: pl.DataFrame, k: int = 5) -> dic
     model.recommend(user_id, n=k)) are then compared against these relevant items.
     The candidate set for negatives is defined as all unique article_ids in test_data.
 
-    Args:
-        model (Any): A recommender model with a recommend(user_id, n) method.
-        test_data (pl.DataFrame): A DataFrame containing test interactions
-            (must include "user_id" and "article_id" columns).
-        k (int, optional): Number of top recommendations to consider. Default is 5.
+    Parameters
+    ----------
+    model : Any
+        A recommender model with a recommend(user_id, n) method.
+    test_data : pl.DataFrame
+        A DataFrame containing test interactions (must include "user_id" and "article_id" columns).
+    k : int, optional
+        Number of top recommendations to consider. Default is 5.
 
-    Returns:
-        dict: A dictionary with average precision, recall, and FPR.
+    Returns
+    -------
+    dict
+        A dictionary with average precision, recall, and FPR.
     """
     # Candidate set: all unique article IDs in test_data.
     candidate_set = set(test_data.select("article_id").unique().to_numpy().flatten())
@@ -58,5 +63,3 @@ def evaluate_recommender(model: Any, test_data: pl.DataFrame, k: int = 5) -> dic
     avg_fpr = np.mean(fprs) if fprs else 0.0
     
     return {"precision": avg_precision, "recall": avg_recall, "fpr": avg_fpr}
-
-
