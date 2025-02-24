@@ -180,3 +180,36 @@ class UserItemBiasRecommender:
         precisions, ndcgs = zip(*results)
         return {"Precision@K": np.mean(precisions), "NDCG@K": np.mean(ndcgs)}
 
+
+    def aggregate_diversity(self, item_df, k=5, user_sample=None, random_seed=42):
+        """
+        Compute the Aggregate Diversity (Catalog Coverage) of the recommendations.
+
+        This metric calculates the percentage of unique items recommended across all users,
+        indicating how well the recommender system spreads recommendations across the entire catalog.
+
+        Parameters:
+        - item_df: polars.DataFrame, containing at least the "article_id" column (full catalog of items).
+        - k: int, number of top recommendations per user.
+        - user_sample: int, optional, number of users to sample for evaluation.
+        - random_seed: int, seed for reproducibility when sampling users.
+
+        Returns:
+        - float: Aggregate diversity, i.e., the fraction of the total catalog that has been recommended.
+        """
+        np.random.seed(random_seed)
+
+        users = np.array(self.user_ids)
+
+        if user_sample is not None and user_sample < len(users):
+            users = np.random.choice(users, size=user_sample, replace=False)
+
+        recommended_items = set()
+        for user_id in users:
+            recommended_items.update(self.recommend(user_id, n=k))
+
+        total_items = set(item_df["article_id"].to_numpy())  
+        aggregate_diversity = len(recommended_items) / len(total_items) if total_items else 0.0
+
+        return aggregate_diversity
+    

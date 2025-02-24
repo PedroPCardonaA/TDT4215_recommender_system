@@ -2,44 +2,26 @@ import polars as pl
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from joblib import Parallel, delayed
-from scipy.spatial.distance import cosine
 
-class ItemBasedCollaborativeRecommender:
-    def __init__(self, interactions: pl.DataFrame, items: pl.DataFrame, binary_model=False):
+class ItemItemCollaborativeRecommender:
+    def __init__(self, interactions: pl.DataFrame, binary_model=False):
         '''
-        Initialize the Item-Based CollaborativeRecommender with a user-item dataframe.
-
+        Initialize the Item-Item Collaborative Recommender with a user-item dataframe.
+        
         Parameters
         ----------
         interactions : pl.DataFrame
             A DataFrame containing user interactions with articles.
         binary_model : bool
-            Whether or not we use only reading articles for user similarity (True) or user interaction details as well (False)
+            Whether or not we use only article interactions (True) or interaction details as well (False).
         '''
         self.interactions = interactions
-        self.items = items
         self.binary_model = binary_model
         self.item_similarity_matrix = {}
 
     def add_interaction_scores(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0) -> pl.DataFrame:
         """
         Computes and adds an `interaction_score` column to the `interactions` DataFrame.
-
-        The interaction score is calculated as a weighted sum of the `max_scroll` and `total_readtime` columns:
-
-            interaction_score = (max_scroll * scroll_weight) + (total_readtime * readtime_weight)
-
-        Parameters
-        ----------
-        scroll_weight : float, optional
-            The weight assigned to the `max_scroll` column (default is 1.0).
-        readtime_weight : float, optional
-            The weight assigned to the `total_readtime` column (default is 1.0).
-
-        Returns
-        -------
-        pl.DataFrame
-            A DataFrame with an additional `interaction_score` column.
         """
         self.interactions = self.interactions.with_columns(
             (
@@ -51,91 +33,47 @@ class ItemBasedCollaborativeRecommender:
 
     def build_item_similarity_matrix(self, sim_size=10):
         '''
-        Builds an item similarity matrix using cosine similarity based on article topics.
-        Each article contains the `sim_size` most similar articles, sorted by similarity.
-
-        Parameters
-        ----------
-        sim_size : int
-            How many other similar articles should be saved for each article in the matrix.
-
-        Returns
-        -------
-        dict
-            A dictionary of lists where the keys are article IDs and the values in the lists are 
-            `sim_size` instances of the most similar articles and their similarity score, sorted by similarity.
+        Builds an item similarity matrix using cosine similarity based on interaction scores.
+        Each item contains the `sim_size` most similar items, sorted by similarity.
         '''
-        topic_columns = [col for col in self.items.columns if col.startswith('topic_')]
-        article_vectors = self.items[topic_columns].to_numpy()
-        pairwise_similarities = 1 - squareform(pdist(article_vectors, metric="cosine"))
+        item_user_matrix = self.interactions.with_columns(
+            pl.lit(1).alias("interaction_score") if self.binary_model else pl.col("interaction_score")
+        ).pivot(values="interaction_score", index="article_id", columns="user_id").fill_null(0)
 
-        item_similarity_matrix = {}
-        article_ids = self.items["article_id"].to_list()
-        
-        for i, article_id in enumerate(article_ids):
-            similar_articles = sorted(
-                zip(article_ids, pairwise_similarities[i]),
-                key=lambda x: x[1], reverse=True
-            )[1:sim_size+1]
+        item_ids = item_user_matrix["article_id"].to_list()
+        item_vectors = item_user_matrix.drop("article_id").to_numpy()
 
-            item_similarity_matrix[article_id] = [(sim[0], np.float64(sim[1])) for sim in similar_articles]
-    
-        self.item_similarity_matrix = item_similarity_matrix
+        similarity_matrix = 1 - squareform(pdist(item_vectors, metric='cosine'))
+        top_similarities = np.argsort(-similarity_matrix, axis=1)[:, 1:sim_size + 1]
 
-        return item_similarity_matrix
+        self.item_similarity_matrix = {
+            item_ids[i]: [(item_ids[j], similarity_matrix[i, j]) for j in top_similarities[i]]
+            for i in range(len(item_ids))
+        }
+        return self.item_similarity_matrix
 
     def fit(self):
         '''
-        Fits the Item-Based Collaborative Recommender model by building the item similarity matrix.
-
-        Returns
-        -------
-        dict
-            The item-item similarity matrix.
+        Fits the Item-Item Collaborative Recommender model by building the item similarity matrix.
         '''
-        if not self.binary_model:
-            self.add_interaction_scores()
+        self.add_interaction_scores() if not self.binary_model else None
         return self.build_item_similarity_matrix()
 
     def recommend_n_articles(self, user_id: int, n: int, allow_read_articles=False) -> list[int]:
         '''
-        Recommend the top n articles for a user based on similar articles' activity, excluding already read articles unless allowed.
-
-        Parameters
-        ----------
-        user_id : int
-            The ID of the user for whom to make predictions.
-        n : int
-            The number of articles to recommend.
-        allow_read_articles : bool
-            Whether already read articles can be recommended.
-
-        Returns
-        -------
-        list[int]
-            A list of article IDs predicted to be most liked by the user.
+        Recommend the top n articles for a user based on similar items.
         '''
-        # Get the articles the user has already read
-        read_articles = set(
-            self.interactions.filter(pl.col("user_id") == user_id)["article_id"].to_list()
-        )
-
-        user_articles = self.interactions.filter(pl.col("user_id") == user_id)
-        user_articles = user_articles.sort("interaction_score", descending=True)
-
+        user_articles = self.interactions.filter(pl.col("user_id") == user_id)["article_id"].to_list()
         article_scores = {}
 
-        for article_id, interaction_score in zip(user_articles["article_id"], user_articles["interaction_score"]):
-            similar_items = self.item_similarity_matrix.get(article_id, [])
-            for sim_item_id, sim_score in similar_items:
-                if allow_read_articles or sim_item_id not in read_articles:
-                    article_scores[sim_item_id] = article_scores.get(sim_item_id, 0) + interaction_score * sim_score
+        for article in user_articles:
+            if article in self.item_similarity_matrix:
+                for similar_article, similarity in self.item_similarity_matrix[article]:
+                    if not allow_read_articles and similar_article in user_articles:
+                        continue
+                    article_scores[similar_article] = article_scores.get(similar_article, 0) + similarity
 
-            if len(article_scores) >= n:
-                break  # Stop once we have enough recommendations
-
-        recommended_articles = sorted(article_scores.items(), key=lambda x: x[1], reverse=True)[:n]
-        return [item[0] for item in recommended_articles]
+        return [article for article, _ in sorted(article_scores.items(), key=lambda x: x[1], reverse=True)[:n]]
 
     def precision_at_k(self, recommended_items, relevant_items, k=5):
         '''
@@ -212,6 +150,7 @@ class ItemBasedCollaborativeRecommender:
         relevant_items = set(
             test_data.filter(
                 pl.col("user_id") == user_id)["article_id"].to_numpy())
+        print(relevant_items)
         if not relevant_items:
             return None
 
@@ -225,6 +164,7 @@ class ItemBasedCollaborativeRecommender:
         '''
         Evaluate the recommender using MAP@K and NDCG@K in parallel on a sample of users.
 
+        
         Parameters
         ----------
         k : int
@@ -238,6 +178,7 @@ class ItemBasedCollaborativeRecommender:
         -------
         dict 
             A dictionary with MAP@K and NDCG@K scores.
+
         '''
         user_ids = self.interactions["user_id"].unique().to_numpy()
 
