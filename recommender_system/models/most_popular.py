@@ -14,24 +14,24 @@ class MostPopularRecommender:
         ----------
         behaviors : pl.DataFrame
             DataFrame containing user behavior data. It is expected to have a column
-            'article_ids_clicked' that contains lists of article IDs clicked by users.
+            'article_id' that contains lists of article IDs clicked by users.
         """
         self.behaviors = behaviors
-        self.top_articles: List[int] = []  # Stores the sorted list of popular article IDs.
+        self.top_articles: List[int] = [] 
 
     def fit(self) -> None:
         """
         Fit the recommender by computing article popularity based on click frequency.
 
-        The method groups the behaviors by 'article_ids_clicked', counts the number of occurrences,
+        The method groups the behaviors by 'article_id', counts the number of occurrences,
         sorts the articles by click count in descending order, and stores the sorted article IDs.
         """
         # Group by article_ids_clicked and count clicks.
-        popularity = self.behaviors.group_by("article_ids_clicked").agg(pl.count().alias("click_count"))
+        popularity = self.behaviors.group_by("article_id").agg(pl.count().alias("click_count"))
         # Sort articles by click_count in descending order.
         popularity = popularity.sort("click_count", descending=True)
         # Store the sorted article IDs.
-        self.top_articles = popularity["article_ids_clicked"]
+        self.top_articles = popularity["article_id"]
 
     def recommend(self, user_id: int, n: int = 5) -> List[int]:
         """
