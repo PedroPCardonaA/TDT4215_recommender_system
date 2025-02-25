@@ -1,6 +1,7 @@
 from IPython.display import display
 import polars as pl
 import numpy as np
+import matplotlib.pyplot as plt
 
 def perform_eda(df: pl.DataFrame, name: str = "DataFrame") -> None:
     """
@@ -38,10 +39,22 @@ def perform_eda(df: pl.DataFrame, name: str = "DataFrame") -> None:
     head_df = df.head()
     display(head_df.to_pandas())
 
-    # 4. Display the count of null values in each column.
+    # 4. Display Null Counts
     print("\n-- Null Counts --")
-    null_counts_df = df.null_count()
-    display(null_counts_df.to_pandas())
+    null_counts = df.null_count()
+    
+    # Remove columns where null count is zero
+    non_zero_nulls = null_counts.row(0)  # Get the row with counts
+    filtered_nulls = {col: count for col, count in zip(null_counts.columns, non_zero_nulls) if count > 0}
+
+    if filtered_nulls:
+        null_df = pl.DataFrame({
+            "Column": list(filtered_nulls.keys()),
+            "Null Count": list(filtered_nulls.values())
+        })
+        display(null_df.to_pandas())
+    else:
+        print("No missing values detected.")
 
 
 def data_sparsity(behavior_df: pl.DataFrame) -> float:
@@ -73,3 +86,49 @@ def data_sparsity(behavior_df: pl.DataFrame) -> float:
     # Calculate sparsity as one minus the ratio of interactions to the total possible interactions.
     sparsity = 1 - (num_interactions / (num_users * num_items))
     return sparsity
+
+
+def articles_clicks(behavior_df: pl.DataFrame, articles_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Compute the number of clicks for each article in the articles DataFrame.
+
+    This function joins the behavior DataFrame with the articles DataFrame and groups by
+    article_id to count the number of clicks for each article.
+
+    Parameters
+    ----------
+    behavior_df : pl.DataFrame
+        The user-item interaction DataFrame.
+    articles_df : pl.DataFrame
+        The articles DataFrame.
+
+    Returns
+    -------
+    pl.DataFrame
+        A DataFrame containing the article_id and the number of clicks for each article.
+    """
+    # Join the behavior DataFrame with the articles DataFrame on "article_id".
+    joined_df = behavior_df.join(articles_df, on="article_id", how="inner")
+    # Group by "article_id" and count the number of clicks for each article.
+    clicks_df = joined_df.group_by("article_id").agg(pl.count("user_id").alias("clicks"))
+    return clicks_df
+
+def plot_article_clicks(clicks_df: pl.DataFrame) -> None:
+    """
+    Plot the distribution of article clicks.
+
+    This function creates a histogram of the number of clicks for each article.
+
+    Parameters
+    ----------
+    clicks_df : pl.DataFrame
+        A DataFrame containing the article_id and the number of clicks for each article.
+    """
+    # Convert the Polars DataFrame to a Pandas DataFrame for plotting.
+    clicks_pd = clicks_df.to_pandas()
+    # Plot the distribution of article clicks.
+    clicks_pd["clicks"].plot(kind="hist", bins=20, color="skyblue", edgecolor="black", linewidth=1.2)
+    plt.title("Distribution of Article interactions")
+    plt.xlabel("Number of interactions")
+    plt.ylabel("Frequency")
+    plt.show()

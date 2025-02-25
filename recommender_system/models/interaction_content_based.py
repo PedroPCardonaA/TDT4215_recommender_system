@@ -271,7 +271,7 @@ class SGDContentBased:
 
         return precision, ndcg
 
-    def evaluate_recommender(self, k=5, n_jobs=-1, user_sample=None):
+    def evaluate_recommender(self, k=5, n_jobs=-1, user_sample=None, random_seed=42):
         """
         Evaluate the recommender across multiple users using MAP@K and NDCG@K.
 
@@ -294,6 +294,7 @@ class SGDContentBased:
         ValueError
             If test data is not provided for evaluation.
         """
+        np.random.seed(random_seed)
         if self.test_data is None:
             raise ValueError("Test data is not provided for evaluation.")
 
@@ -317,3 +318,88 @@ class SGDContentBased:
             "MAP@K": np.mean(map_scores),
             "NDCG@K": np.mean(ndcg_scores),
         }
+    
+    def aggregate_diversity(self, item_df, k=5, user_sample=None, random_seed=42):
+
+        np.random.seed(random_seed)
+
+        users = np.array(self.user_ids)
+
+        if user_sample is not None and user_sample < len(users):
+            users = np.random.choice(users, size=user_sample, replace=False)
+
+        recommended_items = set()
+        for user_id in users:
+            recommended_items.update(self.recommend(user_id, n=k))
+
+        total_items = set(item_df["article_id"].to_numpy())
+        aggregate_diversity = len(recommended_items) / len(total_items) if total_items else 0.0
+
+        return aggregate_diversity
+    
+    def gini_coefficient(self, k=5, user_sample=None, random_seed=42):
+        """
+        Compute the Gini coefficient to measure the concentration of recommendations.
+
+        A Gini coefficient of 0 means that recommendations are equally distributed across items,
+        whereas a Gini coefficient closer to 1 means that recommendations are highly concentrated
+        on a small number of items (i.e., strong popularity bias).
+
+        This version considers the full catalog of articles from self.articles_embedding,
+        assigning a count of 0 to items that are never recommended.
+
+        Parameters
+        ----------
+        k : int, optional
+            Number of top recommendations per user (default is 5).
+        user_sample : int, optional
+            Number of users to sample for evaluation (if None, all users are evaluated).
+        random_seed : int, optional
+            Seed for reproducibility when sampling users (default is 42).
+
+        Returns
+        -------
+        float
+            The Gini coefficient of the item recommendation distribution.
+        """
+        np.random.seed(random_seed)
+        # Get unique user IDs from the binary interaction data.
+        users = np.array(self.binary_interaction["user_id"].unique().to_list())
+        if user_sample is not None and user_sample < len(users):
+            users = np.random.choice(users, size=user_sample, replace=False)
+
+        recommended_items = []
+        for user_id in users:
+            rec_df = self.recommend(user_id, n_recommendations=k)
+            if not rec_df.is_empty():
+                recommended_items.extend(rec_df["article_id"].to_list())
+
+        if not recommended_items:
+            return 0.0
+
+        # Count recommendations for items that were recommended.
+        rec_counts = pl.DataFrame({"article_id": recommended_items}).group_by("article_id") \
+            .agg(pl.len().alias("count"))
+        
+        # Create a DataFrame for the full catalog using article IDs from articles_embedding.
+        full_catalog = pl.DataFrame({"article_id": self.articles_embedding["article_id"]})
+        
+        # Left join the recommendation counts with the full catalog.
+        full_counts = full_catalog.join(rec_counts, on="article_id", how="left").fill_null(0)
+        
+        # Ensure the count column is numeric.
+        full_counts = full_counts.with_columns(pl.col("count").cast(pl.Int64))
+        
+        # Sort counts in ascending order (required for the Gini calculation).
+        full_counts = full_counts.sort("count")
+        
+        counts = np.array(full_counts["count"].to_list(), dtype=np.float64)
+        n = len(counts)
+        if n == 0 or np.sum(counts) == 0:
+            return 0.0
+
+        index = np.arange(1, n + 1)
+        gini = (np.sum((2 * index - n - 1) * counts)) / (n * np.sum(counts))
+        return gini
+
+
