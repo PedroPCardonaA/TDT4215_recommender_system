@@ -250,62 +250,6 @@ class RingBufferBaseline:
         # Return only the article IDs (assumed to be at index 1 in the stored item).
         return [article[1] for article in recommended_articles]
 
-    def evaluate(self, test_data: pl.DataFrame, k: int = 5) -> dict:
-        """
-        Evaluate the recommender using precision, recall, and false positive rate at k.
-
-        For each user in the test set, the set of relevant article IDs is compared with the recommended
-        items. The candidate set for negatives is defined as all unique article IDs in the test data.
-
-        Parameters
-        ----------
-        test_data : pl.DataFrame
-            A DataFrame containing test interactions with columns "user_id" and "article_id".
-        k : int, optional
-            The number of top recommendations to consider (default is 5).
-
-        Returns
-        -------
-        dict
-            A dictionary with average "precision", "recall", and "fpr" (false positive rate).
-        """
-        # Build the candidate set from all unique article IDs in test_data.
-        candidate_set = set(test_data.select("article_id").unique().to_numpy().flatten())
-
-        # Retrieve unique user IDs from test_data.
-        user_ids = test_data.select("user_id").unique().to_numpy().flatten()
-        precisions = []
-        recalls = []
-        fprs = []
-
-        for user in user_ids:
-            # Get relevant items for this user.
-            user_test = test_data.filter(pl.col("user_id") == user)
-            relevant_items = set(user_test.select("article_id").to_numpy().flatten())
-            if not relevant_items:
-                continue
-
-            # Obtain recommendations for the user.
-            recommended_items = self.recommend(user, n=k)
-            hits = sum(1 for item in recommended_items if item in relevant_items)
-            precision = hits / k
-            recall = hits / len(relevant_items)
-
-            # Compute false positive rate.
-            negatives = candidate_set - relevant_items
-            false_positives = sum(1 for item in recommended_items if item not in relevant_items)
-            fpr = false_positives / len(negatives) if negatives else 0.0
-
-            precisions.append(precision)
-            recalls.append(recall)
-            fprs.append(fpr)
-
-        avg_precision = np.mean(precisions) if precisions else 0.0
-        avg_recall = np.mean(recalls) if recalls else 0.0
-        avg_fpr = np.mean(fprs) if fprs else 0.0
-
-        return {"precision": avg_precision, "recall": avg_recall, "fpr": avg_fpr}
-
     def reset_buffer(self) -> None:
         """
         Reset the ring buffer by clearing all stored behaviors.

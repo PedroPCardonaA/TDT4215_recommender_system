@@ -1,10 +1,10 @@
 import polars as pl
 import numpy as np
 
-def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame) -> pl.DataFrame:
+def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns=["impression_id", "article_id", "impression_time", "user_id"]) -> pl.DataFrame:
     """
-    Process training and testing behavior data by exploding the "article_ids_clicked" column
-    and filtering out rows with null values.
+    Process training and testing behavior data by selecting relevant columns,
+    filtering out rows with null values, and sorting by "impression_time" in descending order.
 
     Parameters
     ----------
@@ -12,25 +12,28 @@ def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame) -> pl.D
         Training behavior DataFrame.
     test_df : pl.DataFrame
         Testing behavior DataFrame.
+    relevant_columns : list, optional
+        List of columns to keep (default is ["impression_id", "article_id", "impression_time", "user_id"]).
 
     Returns
     -------
     pl.DataFrame
-        A combined DataFrame containing processed behavior data.
+        A combined DataFrame containing processed behavior data, sorted by "impression_time" in descending order.
     """
-    # Process the training data by exploding the "article_ids_clicked" column
-    processed_train_df = train_df.explode("article_ids_clicked")
-    # Filter out rows with null "article_ids_clicked"
-    processed_train_df = processed_train_df.filter(pl.col("article_ids_clicked").is_not_null())
-    # Filter out rows with null "article_id"
-    processed_train_df = processed_train_df.filter(pl.col("article_id").is_not_null())
 
-    # Process the testing data similarly
-    processed_test_df = test_df.explode("article_ids_clicked")
-    processed_test_df = processed_test_df.filter(pl.col("article_ids_clicked").is_not_null())
-    processed_test_df = processed_test_df.filter(pl.col("article_id").is_not_null())
+    # Keep only relevant columns.
+    train_behaviors_df = train_df.select(relevant_columns)
+    test_behaviors_df = test_df.select(relevant_columns)
 
-    # Concatenate the processed training and testing data
+    # Filter out rows with null-entries.
+    processed_train_df = train_behaviors_df.filter(pl.col("article_id").is_not_null())
+    processed_test_df = test_behaviors_df.filter(pl.col("article_id").is_not_null())
+
+    # Sort the DataFrame by "impression_time" in descending order.
+    processed_train_df = processed_train_df.sort("impression_time", descending=True)
+    processed_test_df = processed_test_df.sort("impression_time", descending=True)
+
+    # Concatenate the processed training and testing data.
     combined_df = pl.concat([processed_train_df, processed_test_df])
     return combined_df
 
