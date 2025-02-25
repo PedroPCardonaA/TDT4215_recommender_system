@@ -1,9 +1,10 @@
+from typing import Any, Dict
 import os
 from codecarbon import EmissionsTracker
 from typing import Callable, Any, Tuple
 import polars as pl
 import numpy as np
-from typing import Any
+
 
 def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) -> dict:
     """
@@ -76,18 +77,21 @@ def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) ->
     
     return {"precision@k": avg_precision, "recall@k": avg_recall, "fpr@k": avg_fpr}
 
-def record_carbon_footprint(func: Callable, *args, **kwargs) -> Tuple[Any, float]:
+def record_carbon_footprint(function_name: str , model_name: str, /, func: Callable, *args, **kwargs) -> Tuple[Any, float]:
     """
     Execute the provided function while tracking its carbon footprint and save the emissions data
-    to output/emission.csv.
+    to output/<function_name>_emission.csv.
 
     This utility method creates an "output" directory if it doesn't exist, then initializes an
-    EmissionsTracker configured to write its output to "output/emission.csv". It runs the given function,
-    stops the tracker, and returns a tuple containing the function's result and the recorded emissions
-    (in kgCO2e).
+    EmissionsTracker configured to write its output to "output/<function_name>_emission.csv". It runs
+    the given function, stops the tracker, and returns a tuple containing the function's result and
+    the recorded emissions (in kgCO2e).
 
     Parameters
     ----------
+    function_name : str
+        A name for the function being tracked; used to generate the output file name.
+        This parameter is positional-only.
     func : callable
         The function to execute.
     *args :
@@ -102,13 +106,57 @@ def record_carbon_footprint(func: Callable, *args, **kwargs) -> Tuple[Any, float
         the estimated carbon footprint in kgCO2e.
     """
     output_dir = "output"
-    # Create the output directory if it doesn't exist.
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-
-    # Initialize the tracker to store emissions data to output/emission.csv.
-    tracker = EmissionsTracker(output_dir=output_dir, output_file="emission.csv")
-    tracker.start()  # Start tracking emissions.
-    result = func(*args, **kwargs)  # Execute the function.
-    emissions = tracker.stop()  # Stop tracking and record emissions.
+    
+    ## Adds model name and function name to the output file name path
+    output_filename = f"{model_name}_{function_name}_emission.csv"
+    tracker = EmissionsTracker(output_dir=output_dir, output_file=output_filename)
+    tracker.start()
+    result = func(*args, **kwargs)
+    emissions = tracker.stop()
     return result, emissions
+
+
+
+def track_model_energy(model: Any, model_name: str, user_id: int, n: int = 5) -> Dict[str, tuple]:
+    """
+    Track the carbon footprint of the model's .fit() and .recommend() methods.
+
+    This utility method calls model.fit() and model.recommend(user_id, n=n) (or model.recommend_n_articles(user_id, n=n))
+    while tracking their energy consumption via the record_carbon_footprint function. It returns a dictionary
+    with the results and emissions for each method call.
+
+    Parameters
+    ----------
+    model : Any
+        A recommender model with .fit() and either a recommend(user_id, n) or recommend_n_articles(user_id, n) method.
+    user_id : int
+        The user ID for which to obtain recommendations.
+    n : int, optional
+        The number of recommendations to return (default is 5).
+
+    Returns
+    -------
+    dict
+        A dictionary with keys "fit" and "recommend" where each value is a tuple (result, emissions)
+        corresponding to the respective method call.
+    """
+    # Track the energy consumption of the .fit() method.
+    fit_result, fit_emissions = record_carbon_footprint("fit", model_name, model.fit)
+    
+    # Determine which recommendation method to use.
+    if hasattr(model, "recommend"):
+        rec_func = model.recommend
+    elif hasattr(model, "recommend_n_articles"):
+        rec_func = model.recommend_n_articles
+    else:
+        raise ValueError("Model must have a 'recommend' or 'recommend_n_articles' method.")
+    
+    # Track the energy consumption of the recommendation method.
+    recommend_result, recommend_emissions = record_carbon_footprint("recommend", model_name, rec_func, user_id, n=n)
+    
+    return {
+        "fit": (fit_result, fit_emissions),
+        "recommend": (recommend_result, recommend_emissions)
+    }
