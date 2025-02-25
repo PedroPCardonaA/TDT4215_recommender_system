@@ -39,10 +39,22 @@ def perform_eda(df: pl.DataFrame, name: str = "DataFrame") -> None:
     head_df = df.head()
     display(head_df.to_pandas())
 
-    # 4. Display the count of null values in each column.
+    # 4. Display Null Counts
     print("\n-- Null Counts --")
-    null_counts_df = df.null_count()
-    display(null_counts_df.to_pandas())
+    null_counts = df.null_count()
+    
+    # Remove columns where null count is zero
+    non_zero_nulls = null_counts.row(0)  # Get the row with counts
+    filtered_nulls = {col: count for col, count in zip(null_counts.columns, non_zero_nulls) if count > 0}
+
+    if filtered_nulls:
+        null_df = pl.DataFrame({
+            "Column": list(filtered_nulls.keys()),
+            "Null Count": list(filtered_nulls.values())
+        })
+        display(null_df.to_pandas())
+    else:
+        print("No missing values detected.")
 
 
 def data_sparsity(behavior_df: pl.DataFrame) -> float:
