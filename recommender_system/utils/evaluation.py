@@ -76,6 +76,8 @@ def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) ->
     
     return {"precision@k": avg_precision, "recall@k": avg_recall, "fpr@k": avg_fpr}
 
+
+
 def record_carbon_footprint(func: Callable, *args, **kwargs) -> Tuple[Any, float]:
     """
     Execute the provided function while tracking its carbon footprint and save the emissions data
