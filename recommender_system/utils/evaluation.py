@@ -1,8 +1,11 @@
+import os
+from codecarbon import EmissionsTracker
+from typing import Callable, Any, Tuple
 import polars as pl
 import numpy as np
 from typing import Any
 
-def evaluate_recommender(model: Any, test_data: pl.DataFrame, k: int = 5) -> dict:
+def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) -> dict:
     """
     Evaluate a recommender model using precision, recall, and FPR at k.
 
@@ -72,3 +75,40 @@ def evaluate_recommender(model: Any, test_data: pl.DataFrame, k: int = 5) -> dic
     avg_fpr = np.mean(fprs) if fprs else 0.0
     
     return {"precision@k": avg_precision, "recall@k": avg_recall, "fpr@k": avg_fpr}
+
+def record_carbon_footprint(func: Callable, *args, **kwargs) -> Tuple[Any, float]:
+    """
+    Execute the provided function while tracking its carbon footprint and save the emissions data
+    to output/emission.csv.
+
+    This utility method creates an "output" directory if it doesn't exist, then initializes an
+    EmissionsTracker configured to write its output to "output/emission.csv". It runs the given function,
+    stops the tracker, and returns a tuple containing the function's result and the recorded emissions
+    (in kgCO2e).
+
+    Parameters
+    ----------
+    func : callable
+        The function to execute.
+    *args :
+        Positional arguments to pass to the function.
+    **kwargs :
+        Keyword arguments to pass to the function.
+
+    Returns
+    -------
+    tuple
+        A tuple (result, emissions) where result is the output of the function and emissions is
+        the estimated carbon footprint in kgCO2e.
+    """
+    output_dir = "output"
+    # Create the output directory if it doesn't exist.
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # Initialize the tracker to store emissions data to output/emission.csv.
+    tracker = EmissionsTracker(output_dir=output_dir, output_file="emission.csv")
+    tracker.start()  # Start tracking emissions.
+    result = func(*args, **kwargs)  # Execute the function.
+    emissions = tracker.stop()  # Stop tracking and record emissions.
+    return result, emissions
