@@ -1,6 +1,7 @@
 from IPython.display import display
 import polars as pl
 import numpy as np
+import matplotlib.pyplot as plt
 
 def perform_eda(df: pl.DataFrame, name: str = "DataFrame") -> None:
     """
@@ -73,3 +74,49 @@ def data_sparsity(behavior_df: pl.DataFrame) -> float:
     # Calculate sparsity as one minus the ratio of interactions to the total possible interactions.
     sparsity = 1 - (num_interactions / (num_users * num_items))
     return sparsity
+
+
+def articles_clicks(behavior_df: pl.DataFrame, articles_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Compute the number of clicks for each article in the articles DataFrame.
+
+    This function joins the behavior DataFrame with the articles DataFrame and groups by
+    article_id to count the number of clicks for each article.
+
+    Parameters
+    ----------
+    behavior_df : pl.DataFrame
+        The user-item interaction DataFrame.
+    articles_df : pl.DataFrame
+        The articles DataFrame.
+
+    Returns
+    -------
+    pl.DataFrame
+        A DataFrame containing the article_id and the number of clicks for each article.
+    """
+    # Join the behavior DataFrame with the articles DataFrame on "article_id".
+    joined_df = behavior_df.join(articles_df, on="article_id", how="inner")
+    # Group by "article_id" and count the number of clicks for each article.
+    clicks_df = joined_df.group_by("article_id").agg(pl.count("user_id").alias("clicks"))
+    return clicks_df
+
+def plot_article_clicks(clicks_df: pl.DataFrame) -> None:
+    """
+    Plot the distribution of article clicks.
+
+    This function creates a histogram of the number of clicks for each article.
+
+    Parameters
+    ----------
+    clicks_df : pl.DataFrame
+        A DataFrame containing the article_id and the number of clicks for each article.
+    """
+    # Convert the Polars DataFrame to a Pandas DataFrame for plotting.
+    clicks_pd = clicks_df.to_pandas()
+    # Plot the distribution of article clicks.
+    clicks_pd["clicks"].plot(kind="hist", bins=20, color="skyblue", edgecolor="black", linewidth=1.2)
+    plt.title("Distribution of Article interactions")
+    plt.xlabel("Number of interactions")
+    plt.ylabel("Frequency")
+    plt.show()
