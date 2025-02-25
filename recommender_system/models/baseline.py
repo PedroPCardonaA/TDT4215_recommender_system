@@ -372,3 +372,70 @@ class UserItemBiasRecommender:
         aggregate_diversity = len(recommended_items) / len(total_items) if total_items else 0.0
 
         return aggregate_diversity
+    
+    def gini_coefficient(self, k=5, user_sample=None, random_seed=42):
+        """
+        Compute the Gini coefficient to measure the concentration of recommendations.
+
+        A Gini coefficient of 0 means that recommendations are equally distributed across items,
+        whereas a Gini coefficient closer to 1 means that recommendations are highly concentrated
+        on a small number of items (i.e., strong popularity bias).
+
+        This version computes counts over the entire catalog in self.item_ids, assigning 0
+        to items that were never recommended.
+
+        Parameters
+        ----------
+        k : int, optional
+            Number of top recommendations per user (default is 5).
+        user_sample : int, optional
+            Number of users to sample for evaluation (if None, all users are evaluated).
+        random_seed : int, optional
+            Seed for reproducibility when sampling users (default is 42).
+
+        Returns
+        -------
+        float
+            The Gini coefficient of item recommendation distribution.
+        """
+        np.random.seed(random_seed)
+        user_ids = np.array(self.user_ids)
+
+        if user_sample is not None and user_sample < len(user_ids):
+            print("Sampling users")
+            user_ids = np.random.choice(user_ids, size=user_sample, replace=False)
+
+        recommended_items = []
+        for user_id in user_ids:
+            recommended_items.extend(self.recommend(user_id, n=k))
+
+        print("Computing Gini coefficient")
+        print(recommended_items)
+        # If there are no recommended items, return 0.
+        if not recommended_items:
+            return 0.0 
+
+        # Create a DataFrame with counts for items that were recommended.
+        rec_counts = pl.DataFrame({"article_id": recommended_items}) \
+            .group_by("article_id") \
+            .agg(pl.len().alias("count"))
+        
+        # Create a DataFrame for all items in the catalog.
+        all_items_df = pl.DataFrame({"article_id": self.item_ids})
+        
+        # Left join the recommendation counts on the full catalog and fill missing counts with 0.
+        full_counts = all_items_df.join(rec_counts, on="article_id", how="left").fill_null(0)
+        
+        # Sort the counts in ascending order (required for the standard Gini formula).
+        full_counts = full_counts.sort("count")
+        
+        counts = np.array(full_counts["count"].to_list(), dtype=np.float64)
+        n = len(counts)
+        if n == 0 or np.sum(counts) == 0:
+            return 0.0  
+
+        index = np.arange(1, n + 1)
+        gini = (np.sum((2 * index - n - 1) * counts)) / (n * np.sum(counts))
+        
+        return gini
+
