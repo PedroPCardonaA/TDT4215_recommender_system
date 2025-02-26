@@ -6,4 +6,4 @@ numpy
 joblib
 matplotlib
 codecarbon
-matplotlib
+scikit-learn

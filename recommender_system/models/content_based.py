@@ -38,6 +38,7 @@ class CosineSimilarityContentBased:
         item_vectors : dict
             Dictionary mapping each `article_id` to its corresponding document vector.
         """
+        np.random.seed(42)
         self.train_data, self.test_data = self.split_behavior_data(
             behavior_data, train_ratio, time_column="impression_time"
         )
