@@ -35,24 +35,24 @@ def main():
     # 1. Define which columns we want to keep (in the final order).
     #    Note that 'model' and 'method' will be added first.
     KEEP_COLUMNS = [
-        "timestamp",
-        "run_id",
+        #"timestamp",
+        #"run_id",
         "duration",
         "emissions",
         "emissions_rate",
-        "cpu_power",
+        #"cpu_power",
         #"gpu_power",
-        "ram_power",
-        "cpu_energy",
+        #"ram_power",
+        #"cpu_energy",
         #"gpu_energy",
-        "ram_energy",
+        #"ram_energy",
         "energy_consumed",
-        "country_name",
-        "cpu_count",
-        "cpu_model",
+        #"country_name",
+        #"cpu_count",
+        #"cpu_model",
         #"gpu_count",
         #"gpu_model",
-        "ram_total_size"
+        #"ram_total_size"
     ]
     
     # 2. Compute the /output folder path relative to this script.

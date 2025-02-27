@@ -1,0 +1,6 @@
+Parquet Name,Null Counts
+train_behavior_df,1030171
+embeddings_df,0
+article_df,34412
+test_behavior_df,1090874
+processed_behavior_df,1345
