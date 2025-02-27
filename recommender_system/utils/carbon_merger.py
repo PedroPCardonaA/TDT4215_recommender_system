@@ -1,8 +1,37 @@
+"""
+This module merges CSV files from the outputdirectory and extracts selected columns. Then it
+writes the combined data to a summary file. It infers `model` and `method`
+from each CSV filename and includes them as columns in the final output.
+"""
+
 import os
 import glob
 import pandas as pd
 
 def main():
+    """
+    Merge CSV files from the `/demostrations/output` folder, extract specific columns,
+    and save the combined result as a single CSV file in `/output/summary/`.
+
+    This function:
+        1. Locates all CSV files in the `/demostrations/output` directory.
+        2. Infers `model` and `method` from each filename (e.g., `baseline_fit_emission.csv`).
+        3. Keeps only a predefined list of columns, inserting `model` and `method` first.
+        4. Stacks all CSV files vertically into one DataFrame.
+        5. Saves the merged DataFrame as `Carbon_Sheet_Summary.csv` in the `/output/summary` folder.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no CSV files are found in the specified directory.
+    Exception
+        If any error occurs while reading or merging the DataFrames.
+
+    Returns
+    -------
+    None
+        The function prints the location of the merged CSV file and does not return any object.
+    """
     # 1. Define which columns we want to keep (in the final order).
     #    Note that 'model' and 'method' will be added first.
     KEEP_COLUMNS = [
