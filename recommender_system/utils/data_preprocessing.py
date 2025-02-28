@@ -1,7 +1,7 @@
 import polars as pl
 import numpy as np
 
-def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns=["impression_id", "article_id", "impression_time", "user_id"]) -> pl.DataFrame:
+def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns=["impression_id", "article_id", "impression_time", "user_id"], filter_null_columns=["article_id"], sort_by="impression_time") -> pl.DataFrame:
     """
     Process training and testing behavior data by selecting relevant columns,
     filtering out rows with null values, and sorting by "impression_time" in descending order.
@@ -20,23 +20,51 @@ def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relevan
     pl.DataFrame
         A combined DataFrame containing processed behavior data, sorted by "impression_time" in descending order.
     """
-
     # Keep only relevant columns.
-    train_behaviors_df = train_df.select(relevant_columns)
-    test_behaviors_df = test_df.select(relevant_columns)
-
-    # Filter out rows with null-entries.
-    processed_train_df = train_behaviors_df.filter(pl.col("article_id").is_not_null())
-    processed_test_df = test_behaviors_df.filter(pl.col("article_id").is_not_null())
-
-    # Sort the DataFrame by "impression_time" in descending order.
-    processed_train_df = processed_train_df.sort("impression_time", descending=True)
-    processed_test_df = processed_test_df.sort("impression_time", descending=True)
-
+    processed_train_df = process_dataframe(train_df, relevant_columns, filter_null_columns, sort_by)
+    processed_test_df = process_dataframe(test_df, relevant_columns, filter_null_columns, sort_by)
+    
     # Concatenate the processed training and testing data.
     combined_df = pl.concat([processed_train_df, processed_test_df])
     return combined_df
 
+def process_dataframe(
+    df: pl.DataFrame, 
+    relevant_columns: list = None, 
+    filter_null_columns: list = None, 
+    sort_by: str = None
+) -> pl.DataFrame:
+    """
+    Processes a DataFrame with optional selection, filtering, and sorting.
+
+    Parameters:
+    ----------
+    df : (pl.DataFrame) 
+        The input DataFrame.
+    relevant_columns : (list, optional)
+        Columns to select. If None, all columns are kept.
+    filter_null_columns : (list, optional) 
+        Columns to check for null values. If None, no filtering is applied.
+    sort_by : (str, optional)
+        Column name to sort by. If None, no sorting is applied.
+
+    Returns:
+    ----------
+    pl.DataFrame 
+        The processed DataFrame.
+    """
+    
+    if relevant_columns is not None:
+        df = df.select(relevant_columns)
+
+    if filter_null_columns is not None:
+        filter_condition = pl.all([pl.col(col).is_not_null() for col in filter_null_columns])
+        df = df.filter(filter_condition)
+
+    if sort_by is not None:
+        df = df.sort(sort_by, descending=True)
+
+    return df
 
 def random_split(df: pl.DataFrame, test_ratio: float = 0.30) -> (pl.DataFrame, pl.DataFrame):
     """
