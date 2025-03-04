@@ -15,7 +15,14 @@ class DataProcessor:
         behaviors_processed = self.process_train_test_df(self.train_behaviors_df, self.test_behaviors_df, ["impression_id", "article_id", "impression_time", "user_id"], ["article_id"], "impression_time")
         return articles_processed, document_vectors_processed, behaviors_processed
 
-    def process_train_test_df(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns: list[str], filter_null_columns: list[str], sort_by: str) -> pl.DataFrame:
+    def process_train_test_df(
+            self, 
+            train_df: pl.DataFrame, 
+            test_df: pl.DataFrame, 
+            relevant_columns: list[str], 
+            filter_null_columns: list[str], 
+            sort_by: str
+        ) -> pl.DataFrame:
         """
         Process training and testing behavior data by selecting relevant columns,
         filtering out rows with null values, and sorting by "impression_time" in descending order.
@@ -39,14 +46,15 @@ class DataProcessor:
             A combined DataFrame containing processed data, optionally sorted by the sort_by column in descending order.
         """
         # Keep only relevant columns.
-        processed_train_df = process_dataframe(train_df, relevant_columns, filter_null_columns, sort_by)
-        processed_test_df = process_dataframe(test_df, relevant_columns, filter_null_columns, sort_by)
+        processed_train_df = self.process_dataframe(train_df, relevant_columns, filter_null_columns, sort_by)
+        processed_test_df = self.process_dataframe(test_df, relevant_columns, filter_null_columns, sort_by)
         
         # Concatenate the processed training and testing data.
         combined_df = pl.concat([processed_train_df, processed_test_df])
         return combined_df
 
     def process_dataframe(
+        self,
         df: pl.DataFrame, 
         relevant_columns: list = None, 
         filter_null_columns: list = None, 
@@ -84,7 +92,11 @@ class DataProcessor:
 
         return df
 
-    def random_split(df: pl.DataFrame, test_ratio: float = 0.30) -> (pl.DataFrame, pl.DataFrame):
+    def random_split(
+            self,
+            df: pl.DataFrame, 
+            test_ratio: float = 0.30
+        ) -> (pl.DataFrame, pl.DataFrame):
         """
         Randomly split a DataFrame into training and testing sets.
 
@@ -110,7 +122,13 @@ class DataProcessor:
         return train_df, test_df
 
 
-    def time_based_split(df: pl.DataFrame, time_field: str = "impression_time", id_field: str = "impression_id", test_ratio: float = 0.30) -> (pl.DataFrame, pl.DataFrame):
+    def time_based_split(
+            self,
+            df: pl.DataFrame, 
+            time_field: str = "impression_time", 
+            id_field: str = "impression_id", 
+            test_ratio: float = 0.30
+        ) -> (pl.DataFrame, pl.DataFrame):
         """
         Split a DataFrame into training and test sets based on time.
 
