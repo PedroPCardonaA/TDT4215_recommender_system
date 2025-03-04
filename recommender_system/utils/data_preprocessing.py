@@ -1,10 +1,23 @@
 import polars as pl
 import numpy as np
 
-def process_dataset():
-    return True
+def process_EBNeRD_dataset() -> list[pl.DataFrame]:
+    # We get the EB-NeRD dataset from the data folder
+    # Article data
+    articles_df = pl.read_parquet('../../data/articles.parquet')
+    document_vectors_df = pl.read_parquet('../../data/document_vector.parquet')
 
-def process_train_test_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns: list[str] =["impression_id", "article_id", "impression_time", "user_id"], filter_null_columns: list[str] =["article_id"], sort_by: str ="impression_time") -> pl.DataFrame:
+    # Training set for behaviours and history
+    train_behaviors_df = pl.read_parquet('../../data/train/behaviors.parquet')
+    test_behaviors_df = pl.read_parquet('../../data/validation/behaviors.parquet')
+
+    # For articles
+    articles_processed = process_dataframe(articles_df, None, ["article_id"], ["article_id"])
+    document_vectors_processed = process_dataframe(document_vectors_df, None, None, None)
+    behaviors_processed = process_train_test_df(train_behaviors_df, test_behaviors_df, ["impression_id", "article_id", "impression_time", "user_id"], ["article_id"], "impression_time")
+    return articles_processed, document_vectors_processed, behaviors_processed
+
+def process_train_test_df(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns: list[str], filter_null_columns: list[str], sort_by: str) -> pl.DataFrame:
     """
     Process training and testing behavior data by selecting relevant columns,
     filtering out rows with null values, and sorting by "impression_time" in descending order.
@@ -15,12 +28,12 @@ def process_train_test_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relev
         Training behavior DataFrame.
     test_df : pl.DataFrame
         Testing behavior DataFrame.
-    relevant_columns : list, optional
-        List of columns to keep (default is ["impression_id", "article_id", "impression_time", "user_id"]).
-    filter_null_columns : list, optional
-        List of columns to filter for null_value (default is ["article_id"]).
-    sort_by : str, optional
-        List of columns to sort by (default is "impression_time").
+    relevant_columns : list
+        List of columns to keep.
+    filter_null_columns : list
+        List of columns to filter for null_value).
+    sort_by : str
+        List of columns to sort by.
 
     Returns
     -------
