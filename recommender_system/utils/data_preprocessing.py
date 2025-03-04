@@ -1,7 +1,12 @@
 import polars as pl
 import numpy as np
 
-class DataProcessor:
+class DataProcesser:
+    articles_df: pl.DataFrame
+    document_vectors_df: pl.DataFrame
+    train_behaviors_df: pl.DataFrame
+    test_behaviors_df: pl.DataFrame
+
     def __init__(self):
         # Load the data and store as instance variables
         self.articles_df = pl.read_parquet('../../data/articles.parquet')
