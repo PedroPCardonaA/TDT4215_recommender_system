@@ -1,7 +1,10 @@
 import polars as pl
 import numpy as np
 
-def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns=["impression_id", "article_id", "impression_time", "user_id"], filter_null_columns=["article_id"], sort_by="impression_time") -> pl.DataFrame:
+def process_dataset():
+    return True
+
+def process_train_test_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns: list[str] =["impression_id", "article_id", "impression_time", "user_id"], filter_null_columns: list[str] =["article_id"], sort_by: str ="impression_time") -> pl.DataFrame:
     """
     Process training and testing behavior data by selecting relevant columns,
     filtering out rows with null values, and sorting by "impression_time" in descending order.
@@ -14,11 +17,15 @@ def process_behavior_data(train_df: pl.DataFrame, test_df: pl.DataFrame, relevan
         Testing behavior DataFrame.
     relevant_columns : list, optional
         List of columns to keep (default is ["impression_id", "article_id", "impression_time", "user_id"]).
+    filter_null_columns : list, optional
+        List of columns to filter for null_value (default is ["article_id"]).
+    sort_by : str, optional
+        List of columns to sort by (default is "impression_time").
 
     Returns
     -------
     pl.DataFrame
-        A combined DataFrame containing processed behavior data, sorted by "impression_time" in descending order.
+        A combined DataFrame containing processed data, optionally sorted by the sort_by column in descending order.
     """
     # Keep only relevant columns.
     processed_train_df = process_dataframe(train_df, relevant_columns, filter_null_columns, sort_by)
@@ -35,7 +42,7 @@ def process_dataframe(
     sort_by: str = None
 ) -> pl.DataFrame:
     """
-    Processes a DataFrame with optional selection, filtering, and sorting.
+    Processes a DataFrame with optional selection, null filtering, and sorting.
 
     Parameters:
     ----------
@@ -92,7 +99,7 @@ def random_split(df: pl.DataFrame, test_ratio: float = 0.30) -> (pl.DataFrame, p
     return train_df, test_df
 
 
-def time_based_split(df: pl.DataFrame, test_ratio: float = 0.30) -> (pl.DataFrame, pl.DataFrame):
+def time_based_split(df: pl.DataFrame, time_field: str = "impression_time", id_field: str = "impression_id", test_ratio: float = 0.30) -> (pl.DataFrame, pl.DataFrame):
     """
     Split a DataFrame into training and test sets based on time.
 
@@ -113,7 +120,7 @@ def time_based_split(df: pl.DataFrame, test_ratio: float = 0.30) -> (pl.DataFram
         contains the remainder.
     """
     # Sort the DataFrame by "impression_time" and "impression_id" for stability.
-    df_sorted = df.sort(["impression_time", "impression_id"])
+    df_sorted = df.sort([time_field, id_field])
     n_total = df_sorted.height
     # Calculate the number of rows to allocate to the test set.
     n_test = int(n_total * test_ratio)
