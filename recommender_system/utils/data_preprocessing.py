@@ -1,24 +1,18 @@
 import polars as pl
 import numpy as np
 
-class DataPreprocessing:
+class DataProcessor:
     def __init__(self):
-        pass
+        # Load the data and store as instance variables
+        self.articles_df = pl.read_parquet('../../data/articles.parquet')
+        self.document_vectors_df = pl.read_parquet('../../data/document_vector.parquet')
+        self.train_behaviors_df = pl.read_parquet('../../data/train/behaviors.parquet')
+        self.test_behaviors_df = pl.read_parquet('../../data/validation/behaviors.parquet')
 
-    def process_EBNeRD_dataset() -> list[pl.DataFrame]:
-        # We get the EB-NeRD dataset from the data folder
-        # Article data
-        articles_df = pl.read_parquet('../../data/articles.parquet')
-        document_vectors_df = pl.read_parquet('../../data/document_vector.parquet')
-
-        # Training set for behaviours and history
-        train_behaviors_df = pl.read_parquet('../../data/train/behaviors.parquet')
-        test_behaviors_df = pl.read_parquet('../../data/validation/behaviors.parquet')
-
-        # For articles
-        articles_processed = process_dataframe(articles_df, None, ["article_id"], ["article_id"])
-        document_vectors_processed = process_dataframe(document_vectors_df, None, None, None)
-        behaviors_processed = process_train_test_df(train_behaviors_df, test_behaviors_df, ["impression_id", "article_id", "impression_time", "user_id"], ["article_id"], "impression_time")
+    def process_EBNeRD_dataset(self) -> list[pl.DataFrame]:
+        articles_processed = self.process_dataframe(self.articles_df, None, ["article_id"], ["article_id"])
+        document_vectors_processed = self.process_dataframe(self.document_vectors_df, None, None, None)
+        behaviors_processed = self.process_train_test_df(self.train_behaviors_df, self.test_behaviors_df, ["impression_id", "article_id", "impression_time", "user_id"], ["article_id"], "impression_time")
         return articles_processed, document_vectors_processed, behaviors_processed
 
     def process_train_test_df(train_df: pl.DataFrame, test_df: pl.DataFrame, relevant_columns: list[str], filter_null_columns: list[str], sort_by: str) -> pl.DataFrame:
