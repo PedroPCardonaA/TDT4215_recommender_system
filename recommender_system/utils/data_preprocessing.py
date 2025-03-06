@@ -89,8 +89,8 @@ class DataProcesser:
             df = df.drop(remove_columns)
 
         if filter_null_columns is not None:
-            filter_condition = pl.all([pl.col(col).is_not_null() for col in filter_null_columns])
-            df = df.filter(filter_condition)
+            df = df.filter(pl.col(filter_null_columns).is_not_null())
+
 
         if sort_by is not None:
             df = df.sort(sort_by, descending=True)
