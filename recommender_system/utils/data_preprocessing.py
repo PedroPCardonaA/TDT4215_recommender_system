@@ -24,7 +24,7 @@ class DataProcesser:
             self, 
             train_df: pl.DataFrame, 
             test_df: pl.DataFrame, 
-            relevant_columns: list[str], 
+            remove_columns: list[str], 
             filter_null_columns: list[str], 
             sort_by: str
         ) -> pl.DataFrame:
@@ -38,8 +38,8 @@ class DataProcesser:
             Training behavior DataFrame.
         test_df : pl.DataFrame
             Testing behavior DataFrame.
-        relevant_columns : list
-            List of columns to keep.
+        remove_columns : list
+            List of columns to remove.
         filter_null_columns : list
             List of columns to filter for null_value).
         sort_by : str
@@ -51,8 +51,8 @@ class DataProcesser:
             A combined DataFrame containing processed data, optionally sorted by the sort_by column in descending order.
         """
         # Keep only relevant columns.
-        processed_train_df = self.process_dataframe(train_df, relevant_columns, filter_null_columns, sort_by)
-        processed_test_df = self.process_dataframe(test_df, relevant_columns, filter_null_columns, sort_by)
+        processed_train_df = self.process_dataframe(train_df, remove_columns, filter_null_columns, sort_by)
+        processed_test_df = self.process_dataframe(test_df, remove_columns, filter_null_columns, sort_by)
         
         # Concatenate the processed training and testing data.
         combined_df = pl.concat([processed_train_df, processed_test_df])
@@ -61,7 +61,7 @@ class DataProcesser:
     def process_dataframe(
         self,
         df: pl.DataFrame, 
-        relevant_columns: list = None, 
+        remove_columns: list = None, 
         filter_null_columns: list = None, 
         sort_by: str = None
     ) -> pl.DataFrame:
@@ -72,8 +72,8 @@ class DataProcesser:
         ----------
         df : (pl.DataFrame) 
             The input DataFrame.
-        relevant_columns : (list, optional)
-            Columns to select. If None, all columns are kept.
+        remove_columns : (list, optional)
+            Columns to remove. If None, all columns are kept.
         filter_null_columns : (list, optional) 
             Columns to check for null values. If None, no filtering is applied.
         sort_by : (str, optional)
@@ -85,8 +85,8 @@ class DataProcesser:
             The processed DataFrame.
         """
         
-        if relevant_columns is not None:
-            df = df.select(relevant_columns)
+        if remove_columns is not None:
+            df = df.drop(remove_columns)
 
         if filter_null_columns is not None:
             filter_condition = pl.all([pl.col(col).is_not_null() for col in filter_null_columns])
