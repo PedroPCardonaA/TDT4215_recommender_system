@@ -21,45 +21,49 @@ class DataProcesser:
         return articles_processed, document_vectors_processed, behaviors_processed
 
     def process_train_test_df(
-            self, 
-            train_df: pl.DataFrame, 
-            test_df: pl.DataFrame, 
-            remove_columns: list[str] = None, 
-            filter_null_columns: list[str] = None, 
-            expand_columns: list[str] = None,
-            predict_columns: list[str] = None,
-            predict_strat: str = "mean",
-            sort_by: str = None
-        ) -> pl.DataFrame:
+        self, 
+        train_df: pl.DataFrame, 
+        test_df: pl.DataFrame, 
+        remove_columns: list[str] = None, 
+        filter_null_columns: list[str] = None, 
+        expand_columns: list[str] = None,
+        predict_columns: list[str] = None,
+        predict_strat: str = "mean",
+        sort_by: str = None
+    ) -> pl.DataFrame:
         """
-        Process training and testing behavior data by selecting relevant columns,
-        filtering out rows with null values, and sorting by "impression_time" in descending order.
+        Processes training and testing behavior data by applying column selection, 
+        null filtering, optional expansion, and sorting. The processed data from 
+        both training and testing sets are concatenated into a single DataFrame.
 
         Parameters
         ----------
         train_df : pl.DataFrame
-            Training behavior DataFrame.
+            The training behavior DataFrame.
         test_df : pl.DataFrame
-            Testing behavior DataFrame.
-        remove_columns : list
-            List of columns to remove.
-        filter_null_columns : list
-            List of columns to filter for null_value).
-        sort_by : str
-            List of columns to sort by.
+            The testing behavior DataFrame.
+        remove_columns : list[str], optional
+            List of column names to remove from the DataFrame. If None, no columns are removed.
+        filter_null_columns : list[str], optional
+            List of columns to filter by removing rows containing null values. If None, no filtering is applied.
+        expand_columns : list[str], optional
+            List of columns containing string values to expand into multiple boolean columns. If None, no expansion is applied.
+        predict_columns : list[str], optional
+            List of columns for which prediction strategies are applied. If None, no predictions are performed.
+        predict_strat : str, optional
+            The prediction strategy to use for missing values in predict_columns. Defaults to "mean".
+        sort_by : str, optional
+            Column name to sort by in descending order. If None, no sorting is applied.
 
         Returns
         -------
         pl.DataFrame
-            A combined DataFrame containing processed data, optionally sorted by the sort_by column in descending order.
+            A concatenated DataFrame containing processed data from both training and testing sets.
         """
-        # Keep only relevant columns.
         processed_train_df = self.process_dataframe(train_df, remove_columns, filter_null_columns, expand_columns, predict_columns, predict_strat, sort_by)
         processed_test_df = self.process_dataframe(test_df, remove_columns, filter_null_columns, expand_columns, predict_columns, predict_strat, sort_by)
         
-        # Concatenate the processed training and testing data.
-        combined_df = pl.concat([processed_train_df, processed_test_df])
-        return combined_df
+        return pl.concat([processed_train_df, processed_test_df])
 
     def process_dataframe(
         self,
@@ -72,33 +76,36 @@ class DataProcesser:
         sort_by: str = None
     ) -> pl.DataFrame:
         """
-        Processes a DataFrame with optional selection, null filtering, and sorting.
+        Processes a DataFrame by applying optional column removal, null filtering, 
+        column expansion, prediction strategy application, and sorting.
 
-        Parameters:
+        Parameters
         ----------
-        df : (pl.DataFrame) 
-            The input DataFrame.
-        remove_columns : (list, optional)
-            Columns to remove. If None, all columns are kept.
-        filter_null_columns : (list, optional) 
-            Columns to check for null values. If None, no filtering is applied.
-        expand_columns _ (list, optional)
-            Columns to expand from a string, to a series of bool. If None, no expansion is applied
-        sort_by : (str, optional)
-            Column name to sort by. If None, no sorting is applied.
+        df : pl.DataFrame
+            The input DataFrame to be processed.
+        remove_columns : list[str], optional
+            List of columns to remove. If None, all columns are retained.
+        filter_null_columns : list[str], optional
+            List of columns to check for null values. Rows with null values in these columns are removed. If None, no filtering is applied.
+        expand_columns : list[str], optional
+            List of columns containing string values to be expanded into multiple boolean columns. If None, no expansion is applied.
+        predict_columns : list[str], optional
+            List of columns where missing values will be filled based on a prediction strategy. If None, no imputation is applied.
+        predict_strat : str, optional
+            The strategy for handling missing values in predict_columns. Defaults to "mean".
+        sort_by : str, optional
+            Column name to sort by in descending order. If None, no sorting is applied.
 
-        Returns:
-        ----------
-        pl.DataFrame 
-            The processed DataFrame.
+        Returns
+        -------
+        pl.DataFrame
+            The processed DataFrame after applying the specified transformations.
         """
-        
         if remove_columns is not None:
             df = df.drop(remove_columns)
 
         if filter_null_columns is not None:
             df = df.filter(pl.col(filter_null_columns).is_not_null())
-
 
         if sort_by is not None:
             df = df.sort(sort_by, descending=True)
