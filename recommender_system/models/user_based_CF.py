@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from joblib import Parallel, delayed
 
-class CollaborativeRecommender:
+class UserBasedCollaborativeRecommender:
     def __init__(self, interactions: pl.DataFrame, binary_model = False):
         '''
         Initialize the CollaborativeRecommender with a user-item dataframe.
