@@ -24,9 +24,12 @@ class DataProcesser:
             self, 
             train_df: pl.DataFrame, 
             test_df: pl.DataFrame, 
-            remove_columns: list[str], 
-            filter_null_columns: list[str], 
-            sort_by: str
+            remove_columns: list[str] = None, 
+            filter_null_columns: list[str] = None, 
+            expand_columns: list[str] = None,
+            predict_columns: list[str] = None,
+            predict_strat: str = "mean",
+            sort_by: str = None
         ) -> pl.DataFrame:
         """
         Process training and testing behavior data by selecting relevant columns,
@@ -51,8 +54,8 @@ class DataProcesser:
             A combined DataFrame containing processed data, optionally sorted by the sort_by column in descending order.
         """
         # Keep only relevant columns.
-        processed_train_df = self.process_dataframe(train_df, remove_columns, filter_null_columns, sort_by)
-        processed_test_df = self.process_dataframe(test_df, remove_columns, filter_null_columns, sort_by)
+        processed_train_df = self.process_dataframe(train_df, remove_columns, filter_null_columns, expand_columns, predict_columns, predict_strat, sort_by)
+        processed_test_df = self.process_dataframe(test_df, remove_columns, filter_null_columns, expand_columns, predict_columns, predict_strat, sort_by)
         
         # Concatenate the processed training and testing data.
         combined_df = pl.concat([processed_train_df, processed_test_df])
@@ -61,8 +64,11 @@ class DataProcesser:
     def process_dataframe(
         self,
         df: pl.DataFrame, 
-        remove_columns: list = None, 
-        filter_null_columns: list = None, 
+        remove_columns: list[str] = None, 
+        filter_null_columns: list[str] = None, 
+        expand_columns: list[str] = None,
+        predict_columns: list[str] = None,
+        predict_strat: str = "mean",
         sort_by: str = None
     ) -> pl.DataFrame:
         """
@@ -76,6 +82,8 @@ class DataProcesser:
             Columns to remove. If None, all columns are kept.
         filter_null_columns : (list, optional) 
             Columns to check for null values. If None, no filtering is applied.
+        expand_columns _ (list, optional)
+            Columns to expand from a string, to a series of bool. If None, no expansion is applied
         sort_by : (str, optional)
             Column name to sort by. If None, no sorting is applied.
 
