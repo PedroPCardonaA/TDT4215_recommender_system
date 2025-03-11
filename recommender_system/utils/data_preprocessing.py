@@ -14,10 +14,49 @@ class DataProcesser:
         self.train_behaviors_df = pl.read_parquet('../../data/train/behaviors.parquet')
         self.test_behaviors_df = pl.read_parquet('../../data/validation/behaviors.parquet')
 
-    def process_EBNeRD_dataset(self) -> list[pl.DataFrame]:
-        articles_processed = self.process_dataframe(self.articles_df, None, ["article_id"], ["article_id"])
-        document_vectors_processed = self.process_dataframe(self.document_vectors_df, None, None, None)
-        behaviors_processed = self.process_train_test_df(self.train_behaviors_df, self.test_behaviors_df, ["impression_id", "article_id", "impression_time", "user_id"], ["article_id"], "impression_time")
+    def baseline_process_EBNeRD(self) -> list[pl.DataFrame]:
+        """
+        Preprocesses the EBNeRD dataset by cleaning and transforming articles, document vectors, and behaviors data.
+
+        Returns
+        -------
+        list[pl.DataFrame]
+            A list containing three processed DataFrames:
+            1. Processed articles DataFrame with selected columns removed and sorted by published time.
+            2. Document vectors DataFrame (returned as is, without preprocessing).
+            3. Processed behaviors DataFrame with missing values handled, unnecessary columns removed, 
+            and missing scroll percentages imputed using the mean.
+        """
+        # Article Dataframe
+        # Here we only need to remove non-needed values, and sort by published_time
+        article_drop = ["total_inviews", "total_pageviews", "total_read_time", "image_ids"]
+        articles_processed = self.process_dataframe(
+            df = self.articles_df, 
+            remove_columns = 
+            article_drop, 
+            sort_by = "published_time"
+            )
+
+        # Document vectors
+        # This dataframe does not need any preprocessing
+        document_vectors_processed = self.document_vectors_df
+
+        # Behaviours DataFrame
+        # We filter out columns with too much missing values and columns with non-needed future data
+        # We also remove rows where article_id is null as this is the main page
+        # Lastly we predict missing scroll_percentage with the mean value
+        behaviour_drop = ["gender", "postcode", "age", "next_read_time", "next_scroll_percentage", "article_ids_inview", "article_ids_clicked"]
+        behaviour_non_null = ["article_id"]
+        behaviour_predict = ["scroll_percentage"]
+
+        behaviors_processed = self.process_train_test_df(
+            train_df=self.train_behaviors_df, 
+            test_df=self.test_behaviors_df, 
+            remove_columns = behaviour_drop, 
+            filter_null_columns = behaviour_non_null, 
+            predict_columns = behaviour_predict
+            )
+        
         return articles_processed, document_vectors_processed, behaviors_processed
 
     def process_train_test_df(
