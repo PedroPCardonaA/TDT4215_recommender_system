@@ -67,14 +67,39 @@ class DataProcesser:
         return articles_processed, document_vectors_processed, behaviors_processed
 
     def collaborative_filtering_preprocess(self):
-        behaviour_drop = [
-            "gender", "postcode", "age", "next_read_time",
-            "next_scroll_percentage", "article_ids_inview",
+        """
+        Preprocesses behavioral data for collaborative filtering by removing irrelevant columns, 
+        handling missing values, and aggregating user-article interactions.
+
+        Returns
+        -------
+        pl.DataFrame
+            processed training and testset for behaviours
+        """
+        # This data descrive future interactions, and is therefore not relevant
+        future_data = [
+            "next_read_time", "next_scroll_percentage", "article_ids_inview",
             "article_ids_clicked"
         ]
+
+        # These values were found to not be neccesary for our reccomender system
+        unused_data = [
+            "is_sso_user", "is_subscriber", "session_id", "device_type",
+            "impression_time"
+        ]
+
+        # These values have too much data missng (>80%) to be relevant
+        lacking_data = ["gender", "postcode", "age"]
+
+        behaviour_drop = lacking_data + future_data + unused_data
+
+        # We don't need interactions from the homepage
         behaviour_non_null = ["article_id"]
+
+        # We predict lacking scroll_percentage values my taking the mean
         behaviour_predict = ["scroll_percentage"]
 
+        # We process the data
         behaviors_processed = self.process_train_test_df(
             train_df=self.train_behaviors_df,
             test_df=self.test_behaviors_df,
@@ -82,7 +107,16 @@ class DataProcesser:
             filter_null_columns=behaviour_non_null,
             predict_columns=behaviour_predict)
 
-        return articles_processed, document_vectors_processed, behaviors_processed
+        # We still have to account for multiple interactions with the same user and article
+        behaviors_processed = (
+            behaviors_processed.group_by(["article_id", "user_id"]).agg(
+                pl.col("read_time").product().alias(
+                    "total_readtime"),  # Multiply all readtime values
+                pl.col("scroll_percentage").max().alias(
+                    "max_scroll")  # Select the largest scroll percentage
+            ))
+
+        return behaviors_processed
 
     def process_train_test_df(self,
                               train_df: pl.DataFrame,
