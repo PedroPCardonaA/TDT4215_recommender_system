@@ -4,7 +4,7 @@ from scipy.spatial.distance import pdist, squareform
 from joblib import Parallel, delayed
 
 
-class ItemItemCollaborativeRecommender:
+class ItemBasedCollaborativeRecommender:
     """
     Implements an item–item collaborative recommender using user interaction data.
 

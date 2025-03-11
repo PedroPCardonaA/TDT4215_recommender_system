@@ -1,6 +1,7 @@
 import polars as pl
 import numpy as np
 
+
 class DataProcesser:
     articles_df: pl.DataFrame
     document_vectors_df: pl.DataFrame
@@ -10,9 +11,12 @@ class DataProcesser:
     def __init__(self):
         # Load the data and store as instance variables
         self.articles_df = pl.read_parquet('../../data/articles.parquet')
-        self.document_vectors_df = pl.read_parquet('../../data/document_vector.parquet')
-        self.train_behaviors_df = pl.read_parquet('../../data/train/behaviors.parquet')
-        self.test_behaviors_df = pl.read_parquet('../../data/validation/behaviors.parquet')
+        self.document_vectors_df = pl.read_parquet(
+            '../../data/document_vector.parquet')
+        self.train_behaviors_df = pl.read_parquet(
+            '../../data/train/behaviors.parquet')
+        self.test_behaviors_df = pl.read_parquet(
+            '../../data/validation/behaviors.parquet')
 
     def baseline_process_EBNeRD(self) -> list[pl.DataFrame]:
         """
@@ -29,13 +33,13 @@ class DataProcesser:
         """
         # Article Dataframe
         # Here we only need to remove non-needed values, and sort by published_time
-        article_drop = ["total_inviews", "total_pageviews", "total_read_time", "image_ids"]
+        article_drop = [
+            "total_inviews", "total_pageviews", "total_read_time", "image_ids"
+        ]
         articles_processed = self.process_dataframe(
-            df = self.articles_df, 
-            remove_columns = 
-            article_drop, 
-            sort_by = "published_time"
-            )
+            df=self.articles_df,
+            remove_columns=article_drop,
+            sort_by="published_time")
 
         # Document vectors
         # This dataframe does not need any preprocessing
@@ -45,31 +49,84 @@ class DataProcesser:
         # We filter out columns with too much missing values and columns with non-needed future data
         # We also remove rows where article_id is null as this is the main page
         # Lastly we predict missing scroll_percentage with the mean value
-        behaviour_drop = ["gender", "postcode", "age", "next_read_time", "next_scroll_percentage", "article_ids_inview", "article_ids_clicked"]
+        behaviour_drop = [
+            "gender", "postcode", "age", "next_read_time",
+            "next_scroll_percentage", "article_ids_inview",
+            "article_ids_clicked"
+        ]
         behaviour_non_null = ["article_id"]
         behaviour_predict = ["scroll_percentage"]
 
         behaviors_processed = self.process_train_test_df(
-            train_df=self.train_behaviors_df, 
-            test_df=self.test_behaviors_df, 
-            remove_columns = behaviour_drop, 
-            filter_null_columns = behaviour_non_null, 
-            predict_columns = behaviour_predict
-            )
-        
+            train_df=self.train_behaviors_df,
+            test_df=self.test_behaviors_df,
+            remove_columns=behaviour_drop,
+            filter_null_columns=behaviour_non_null,
+            predict_columns=behaviour_predict)
+
         return articles_processed, document_vectors_processed, behaviors_processed
 
-    def process_train_test_df(
-        self, 
-        train_df: pl.DataFrame, 
-        test_df: pl.DataFrame, 
-        remove_columns: list[str] = None, 
-        filter_null_columns: list[str] = None, 
-        expand_columns: list[str] = None,
-        predict_columns: list[str] = None,
-        predict_strat: str = "mean",
-        sort_by: str = None
-    ) -> pl.DataFrame:
+    def collaborative_filtering_preprocess(self):
+        """
+        Preprocesses behavioral data for collaborative filtering by removing irrelevant columns, 
+        handling missing values, and aggregating user-article interactions.
+
+        Returns
+        -------
+        pl.DataFrame
+            processed training and testset for behaviours
+        """
+        # This data descrive future interactions, and is therefore not relevant
+        future_data = [
+            "next_read_time", "next_scroll_percentage", "article_ids_inview",
+            "article_ids_clicked"
+        ]
+
+        # These values were found to not be neccesary for our reccomender system
+        unused_data = [
+            "is_sso_user", "is_subscriber", "session_id", "device_type",
+            "impression_time"
+        ]
+
+        # These values have too much data missng (>80%) to be relevant
+        lacking_data = ["gender", "postcode", "age"]
+
+        behaviour_drop = lacking_data + future_data + unused_data
+
+        # We don't need interactions from the homepage
+        behaviour_non_null = ["article_id"]
+
+        # We predict lacking scroll_percentage values my taking the mean
+        behaviour_predict = ["scroll_percentage"]
+
+        # We process the data
+        behaviors_processed = self.process_train_test_df(
+            train_df=self.train_behaviors_df,
+            test_df=self.test_behaviors_df,
+            remove_columns=behaviour_drop,
+            filter_null_columns=behaviour_non_null,
+            predict_columns=behaviour_predict)
+
+        # We still have to account for multiple interactions with the same user and article
+        behaviors_processed = (
+            behaviors_processed.group_by(["article_id", "user_id"]).agg(
+                pl.col("read_time").product().alias(
+                    "total_readtime"),  # Multiply all readtime values
+                pl.col("scroll_percentage").max().alias(
+                    "max_scroll")  # Select the largest scroll percentage
+            ))
+
+        return behaviors_processed
+
+    def process_train_test_df(self,
+                              train_df: pl.DataFrame,
+                              test_df: pl.DataFrame,
+                              remove_columns: list[str] = None,
+                              filter_null_columns: list[str] = None,
+                              expand_columns: list[str] = None,
+                              predict_columns: list[str] = None,
+                              predict_strat: str = "mean",
+                              sort_by: str = None) -> pl.DataFrame:
         """
         Processes training and testing behavior data by applying column selection, 
         null filtering, optional expansion, and sorting. The processed data from 
@@ -99,21 +156,27 @@ class DataProcesser:
         pl.DataFrame
             A concatenated DataFrame containing processed data from both training and testing sets.
         """
-        processed_train_df = self.process_dataframe(train_df, remove_columns, filter_null_columns, expand_columns, predict_columns, predict_strat, sort_by)
-        processed_test_df = self.process_dataframe(test_df, remove_columns, filter_null_columns, expand_columns, predict_columns, predict_strat, sort_by)
-        
+        processed_train_df = self.process_dataframe(train_df, remove_columns,
+                                                    filter_null_columns,
+                                                    expand_columns,
+                                                    predict_columns,
+                                                    predict_strat, sort_by)
+        processed_test_df = self.process_dataframe(test_df, remove_columns,
+                                                   filter_null_columns,
+                                                   expand_columns,
+                                                   predict_columns,
+                                                   predict_strat, sort_by)
+
         return pl.concat([processed_train_df, processed_test_df])
 
-    def process_dataframe(
-        self,
-        df: pl.DataFrame, 
-        remove_columns: list[str] = None, 
-        filter_null_columns: list[str] = None, 
-        expand_columns: list[str] = None,
-        predict_columns: list[str] = None,
-        predict_strat: str = "mean",
-        sort_by: str = None
-    ) -> pl.DataFrame:
+    def process_dataframe(self,
+                          df: pl.DataFrame,
+                          remove_columns: list[str] = None,
+                          filter_null_columns: list[str] = None,
+                          expand_columns: list[str] = None,
+                          predict_columns: list[str] = None,
+                          predict_strat: str = "mean",
+                          sort_by: str = None) -> pl.DataFrame:
         """
         Processes a DataFrame by applying optional column removal, null filtering, 
         column expansion, prediction strategy application, and sorting.
@@ -151,11 +214,9 @@ class DataProcesser:
 
         return df
 
-    def random_split(
-            self,
-            df: pl.DataFrame, 
-            test_ratio: float = 0.30
-        ) -> (pl.DataFrame, pl.DataFrame):
+    def random_split(self,
+                     df: pl.DataFrame,
+                     test_ratio: float = 0.30) -> (pl.DataFrame, pl.DataFrame):
         """
         Randomly split a DataFrame into training and testing sets.
 
@@ -180,14 +241,12 @@ class DataProcesser:
         train_df = df.filter(~test_mask)
         return train_df, test_df
 
-
     def time_based_split(
             self,
-            df: pl.DataFrame, 
-            time_field: str = "impression_time", 
-            id_field: str = "impression_id", 
-            test_ratio: float = 0.30
-        ) -> (pl.DataFrame, pl.DataFrame):
+            df: pl.DataFrame,
+            time_field: str = "impression_time",
+            id_field: str = "impression_id",
+            test_ratio: float = 0.30) -> (pl.DataFrame, pl.DataFrame):
         """
         Split a DataFrame into training and test sets based on time.
 
