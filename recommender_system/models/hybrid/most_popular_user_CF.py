@@ -3,7 +3,7 @@ import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from joblib import Parallel, delayed
 
-class UserBasedCollaborativeRecommender:
+class MostPopularCollaborativeRecommender:
     def __init__(self, interactions: pl.DataFrame, binary_model = False):
         '''
         Initialize the CollaborativeRecommender with a user-item dataframe.
@@ -18,6 +18,18 @@ class UserBasedCollaborativeRecommender:
         self.interactions = interactions
         self.binary_model = binary_model
         self.user_similarity_matrix = {}
+        self.most_popular_articles = self.compute_most_popular_articles()
+
+    def compute_most_popular_articles(self, top_n=100):
+        """
+        Compute the most popular articles based on interaction count.
+        """
+        return (
+            self.interactions.group_by("article_id")
+            .agg(pl.len().alias("popularity"))
+            .sort("popularity", descending=True)
+            .head(top_n)["article_id"].to_list()
+        )
 
     def add_interaction_scores(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0) -> pl.DataFrame:
         """
@@ -116,30 +128,32 @@ class UserBasedCollaborativeRecommender:
             A list of article IDs predicted to be most liked by the user.
         '''
         if user_id not in self.user_similarity_matrix:
-            return []  # Return empty list if user not found
+            return self.most_popular_articles[:n]  # Fallback to most popular articles
 
-        # Get the articles the user has already read
         read_articles = set(
             self.interactions.filter(pl.col("user_id") == user_id)["article_id"].to_list()
         )
 
-        # Get similar users' article interactions
         similar_users = [uid for uid, _ in self.user_similarity_matrix[user_id]]
         similar_user_articles = self.interactions.filter(pl.col("user_id").is_in(similar_users))
 
-        # Aggregate interaction scores for each article
         article_scores = similar_user_articles.group_by("article_id").agg(
             pl.len().alias("total_score") if self.binary_model else pl.col("interaction_score").sum().alias("total_score")
         )
 
-        # Filter out articles the user has already read (unless allowed)
         if not allow_read_articles:
             article_scores = article_scores.filter(~pl.col("article_id").is_in(read_articles))
 
-        # Sort by total score and select top n articles
         top_articles = article_scores.sort("total_score", descending=True).head(n)
+        recommended_articles = top_articles["article_id"].to_list()
 
-        return top_articles["article_id"].to_list()
+        if len(recommended_articles) < n:  # Fill missing slots with most popular articles
+            missing_count = n - len(recommended_articles)
+            recommended_articles += [
+                article for article in self.most_popular_articles if article not in recommended_articles
+            ][:missing_count]
+
+        return recommended_articles
 
     def precision_at_k(self, recommended_items, relevant_items, k=5):
         '''

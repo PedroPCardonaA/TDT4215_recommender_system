@@ -4,3 +4,4 @@ generated_data/
 .idea/
 emissions.csv
 output/
+models/hybrid/__pycache__/
