@@ -19,7 +19,7 @@ class UserBasedCollaborativeRecommender:
         self.binary_model = binary_model
         self.user_similarity_matrix = {}
 
-    def add_interaction_scores(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0) -> pl.DataFrame:
+    def add_interaction_scores(self, scroll_weight: float, readtime_weight: float) -> pl.DataFrame:
         """
         Computes and adds an `interaction_score` column to the `interactions` DataFrame.
 
@@ -84,7 +84,7 @@ class UserBasedCollaborativeRecommender:
 
         return self.user_similarity_matrix
 
-    def fit(self):
+    def fit(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0):
         '''
         Fits the Collaborative Recommender model by building the user similarity matrix.
 
@@ -93,7 +93,7 @@ class UserBasedCollaborativeRecommender:
         dict
             The user-user similarity matrix.
         '''
-        self.add_interaction_scores() if not self.binary_model else None
+        self.add_interaction_scores(scroll_weight, readtime_weight) if not self.binary_model else None
 
         return self.build_user_similarity_matrix()
 
