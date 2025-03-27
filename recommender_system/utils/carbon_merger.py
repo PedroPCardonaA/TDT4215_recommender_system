@@ -112,7 +112,7 @@ def main():
     merged_df = pd.concat(dataframes, axis=0, ignore_index=True)
     
     # 8. Create the /summary folder if it does not exist.
-    output_dir = os.path.join(base_folder, "summary")
+    output_dir = os.path.join(base_folder, "carbon_summary")
     os.makedirs(output_dir, exist_ok=True)
     
     # 9. Save the final merged DataFrame to a CSV file.
