@@ -28,7 +28,7 @@ class ItemBasedCollaborativeRecommender:
         self.binary_model = binary_model
         self.item_similarity_matrix = {}
 
-    def add_interaction_scores(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0) -> pl.DataFrame:
+    def add_interaction_scores(self, scroll_weight: float, readtime_weight: float) -> pl.DataFrame:
         """
         Compute and add an `interaction_score` column to the interactions DataFrame.
 
@@ -95,7 +95,7 @@ class ItemBasedCollaborativeRecommender:
         }
         return self.item_similarity_matrix
 
-    def fit(self):
+    def fit(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0):
         """
         Fit the item–item collaborative recommender by building the item similarity matrix.
 
@@ -106,7 +106,7 @@ class ItemBasedCollaborativeRecommender:
         """
         # Compute interaction scores if using detailed interactions.
         if not self.binary_model:
-            self.add_interaction_scores()
+            self.add_interaction_scores(scroll_weight, readtime_weight)
         return self.build_item_similarity_matrix()
 
     def recommend_n_articles(self, user_id: int, n: int, allow_read_articles: bool = False) -> list[int]:
