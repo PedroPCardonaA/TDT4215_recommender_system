@@ -96,7 +96,7 @@ class MostPopularCollaborativeRecommender:
 
         return self.user_similarity_matrix
 
-    def fit(self):
+    def fit(self, scroll_weight: float = 1.0, readtime_weight: float = 1.0):
         '''
         Fits the Collaborative Recommender model by building the user similarity matrix.
 
@@ -105,7 +105,7 @@ class MostPopularCollaborativeRecommender:
         dict
             The user-user similarity matrix.
         '''
-        self.add_interaction_scores() if not self.binary_model else None
+        self.add_interaction_scores(scroll_weight, readtime_weight) if not self.binary_model else None
 
         return self.build_user_similarity_matrix()
 
