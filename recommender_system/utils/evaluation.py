@@ -1,20 +1,22 @@
+import csv
 from typing import Any, Dict
 import os
 from codecarbon import EmissionsTracker
 from typing import Callable, Any, Tuple
-import polars as pl
 import numpy as np
+import polars as pl
 
+import numpy as np
+import polars as pl
 
 def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) -> dict:
     """
     Evaluate a recommender model using precision, recall, and FPR at k.
 
-    For each user in the test set, relevant items are defined as the set of article_ids
-    that the user has in the test data. The model's recommendations (obtained via either 
-    model.recommend(user_id, n=k) or model.recommend_n_articles(user_id, n=k)) are then compared
-    against these relevant items. The candidate set for negatives is defined as all unique article_ids
-    in test_data.
+    For each user, relevant items are defined as the set of article_ids that the user has in the test data.
+    The model's recommendations (obtained via either model.recommend(user_id, n=k) or 
+    model.recommend_n_articles(user_id, n=k)) are compared against these relevant items.
+    The candidate set for negatives is defined as all unique article_ids in test_data.
 
     Parameters
     ----------
@@ -30,7 +32,7 @@ def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) ->
     dict
         A dictionary with average precision@k, recall@k, and FPR@k.
     """
-    # Determine which recommendation method to use.
+    # Determine the recommendation function.
     if hasattr(model, "recommend"):
         rec_func = model.recommend
     elif hasattr(model, "recommend_n_articles"):
@@ -41,28 +43,40 @@ def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) ->
     # Candidate set: all unique article IDs in test_data.
     candidate_set = set(test_data.select("article_id").unique().to_numpy().flatten())
     
-    # Get unique users from test data.
-    user_ids = test_data.select("user_id").unique().to_numpy().flatten()
+    # Determine user ids:
+    # First, check if the model provides a mapping from user id to index.
+    if hasattr(model, "user_to_index"):
+        user_ids = list(model.user_to_index.keys())
+    elif hasattr(model, "user_id_to_index"):
+        user_ids = list(model.user_id_to_index.keys())
+    else:
+        # Fallback: extract unique user ids from test data.
+        user_ids = test_data.select("user_id").unique().to_numpy().flatten()
+    
     precisions = []
     recalls = []
     fprs = []
     
     for user in user_ids:
-        # Relevant items: all article_ids for this user in test_data.
+        # Get relevant items: all article_ids for this user in test_data.
         user_test = test_data.filter(pl.col("user_id") == user)
         relevant_items = set(user_test.select("article_id").to_numpy().flatten())
         if not relevant_items:
             continue
 
         # Get recommendations for this user using the determined recommendation function.
-        recommended_items = rec_func(user, n=k)
+        try:
+            recommended_items = rec_func(user, n=k)
+        except ValueError as e:
+            # Skip users not found in the model.
+            continue
         
         # Compute hits.
         hits = sum(1 for item in recommended_items if item in relevant_items)
         precision = hits / k
         recall = hits / len(relevant_items)
         
-        # Compute FPR:
+        # Compute FPR.
         negatives = candidate_set - relevant_items
         false_positives = sum(1 for item in recommended_items if item not in relevant_items)
         fpr = false_positives / len(negatives) if negatives else 0.0
@@ -76,6 +90,46 @@ def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) ->
     avg_fpr = np.mean(fprs) if fprs else 0.0
     
     return {"precision@k": avg_precision, "recall@k": avg_recall, "fpr@k": avg_fpr}
+
+
+def append_model_metrics(metrics: dict, model_type: str) -> None:
+    """
+    Append the evaluation metrics for any model to CSV file in the output/evaluation_summary folder.
+    If the file doesn't exist, it will be created and the header will be written.
+
+    Parameters
+    ----------
+    metrics : dict
+        A dictionary containing the evaluation metrics with keys: "precision@k", "recall@k", "fpr@k".
+    model_type : str
+        A string representing the type or name of the model being evaluated.
+    """
+    # Create the output/evaluation_summary directory if it doesn't exist.
+    output_dir = os.path.join("output", "evaluation_summary")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Define the CSV file path.
+    file_path = os.path.join(output_dir, "model_overview.csv")
+    
+    # Check if file exists to decide if header should be written.
+    file_exists = os.path.isfile(file_path)
+    
+    # Open the file in append mode.
+    with open(file_path, mode="a", newline="") as csv_file:
+        fieldnames = ["Model Type", "precision@k", "recall@k", "fpr@k"]
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        
+        # If file is new, write the header.
+        if not file_exists:
+            writer.writeheader()
+        
+        # Write the new row with the provided metrics.
+        writer.writerow({
+            "Model Type": model_type,
+            "precision@k": metrics.get("precision@k", 0.0),
+            "recall@k": metrics.get("recall@k", 0.0),
+            "fpr@k": metrics.get("fpr@k", 0.0)
+        })
 
 def record_carbon_footprint(function_name: str , model_name: str, /, func: Callable, *args, **kwargs) -> Tuple[Any, float]:
     """
