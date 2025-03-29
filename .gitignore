@@ -4,3 +4,4 @@ generated_data/
 .idea/
 emissions.csv
 output/
+__pycache__/
