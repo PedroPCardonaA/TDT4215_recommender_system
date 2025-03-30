@@ -256,6 +256,11 @@ def aggregate_diversity(model, item_df, k=5, user_sample=None, random_seed=42):
     elif hasattr(model, "user_similarity_matrix"):
         # Use keys from user_similarity_matrix for user-based CF models.
         user_ids = list(model.user_similarity_matrix.keys())
+    elif hasattr(model, "item_similarity_matrix"):
+        # Use keys from item_similarity_matrix for item-based CF models.
+        user_ids = list(model.item_similarity_matrix.keys())
+    elif hasattr(model, "user_ids"):
+        user_ids = model.user_ids
     else:
         # Fallback: extract unique user ids from the provided item_df.
         user_ids = item_df.select("user_id").unique().to_numpy().flatten()
