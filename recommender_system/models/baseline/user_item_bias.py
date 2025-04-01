@@ -21,7 +21,7 @@ class UserItemBiasRecommender:
         include the following columns:
           - `user_id` (UInt32)
           - `article_id` (Int32)
-          - `impression_time` (Datetime with microsecond precision)
+          - `impression_time` (Datetime with microsecond MAP)
           - `score` (Float64)
 
         Parameters
@@ -205,11 +205,11 @@ class UserItemBiasRecommender:
             + self.item_biases[item_index]
         )
 
-    def precision_at_k(self, recommended_items, relevant_items, k=5):
+    def MAP_at_k(self, recommended_items, relevant_items, k=5):
         """
-        Compute the Precision@K for a set of recommendations.
+        Compute the MAP@K for a set of recommendations.
 
-        Precision@K is the proportion of the top K recommended items that are relevant.
+        MAP@K is the proportion of the top K recommended items that are relevant.
 
         Parameters
         ----------
@@ -223,7 +223,7 @@ class UserItemBiasRecommender:
         Returns
         -------
         float
-            The Precision@K value.
+            The MAP@K value.
         """
         if not relevant_items:
             return 0.0
@@ -263,7 +263,7 @@ class UserItemBiasRecommender:
 
     def compute_user_metrics(self, user_id, test_data: pl.DataFrame, k=5):
         """
-        Compute Precision@K and NDCG@K metrics for a single user based on test interactions.
+        Compute MAP@K and NDCG@K metrics for a single user based on test interactions.
 
         The method filters the test data for the specified user, generates recommendations,
         and calculates both metrics.
@@ -280,23 +280,23 @@ class UserItemBiasRecommender:
         Returns
         -------
         tuple or None
-            A tuple (precision, ndcg) if relevant interactions exist; otherwise, None.
+            A tuple (MAP, ndcg) if relevant interactions exist; otherwise, None.
         """
         relevant_items = set(test_data.filter(pl.col("user_id") == user_id)["article_id"].to_numpy())
         if not relevant_items:
             return None
 
         recommended_items = self.recommend(user_id, n=k)
-        precision = self.precision_at_k(recommended_items, relevant_items, k)
+        MAP = self.MAP_at_k(recommended_items, relevant_items, k)
         ndcg = self.ndcg_at_k(recommended_items, relevant_items, k)
-        return precision, ndcg
+        return MAP, ndcg
 
     def evaluate_recommender(self, test_data: pl.DataFrame, k=5, n_jobs=-1, user_sample=None):
         """
         Evaluate the recommender's performance across multiple users in parallel.
 
         The method filters test users to those present in the training set, optionally samples
-        a subset of users, and aggregates Precision@K and NDCG@K metrics.
+        a subset of users, and aggregates MAP@K and NDCG@K metrics.
 
         Parameters
         ----------
@@ -312,7 +312,7 @@ class UserItemBiasRecommender:
         Returns
         -------
         dict
-            Dictionary containing average "Precision@K" and "NDCG@K" scores.
+            Dictionary containing average "MAP@K" and "NDCG@K" scores.
         """
         # Extract unique user IDs from the test data.
         user_ids = test_data["user_id"].unique().to_numpy()
@@ -329,10 +329,10 @@ class UserItemBiasRecommender:
         # Exclude users with no test interactions.
         results = [res for res in results if res is not None]
         if not results:
-            return {"Precision@K": 0.0, "NDCG@K": 0.0}
+            return {"MAP@K": 0.0, "NDCG@K": 0.0}
 
-        precisions, ndcgs = zip(*results)
-        return {"Precision@K": np.mean(precisions), "NDCG@K": np.mean(ndcgs)}
+        MAPs, ndcgs = zip(*results)
+        return {"MAP@K": np.mean(MAPs), "NDCG@K": np.mean(ndcgs)}
 
     def aggregate_diversity(self, item_df, k=5, user_sample=None, random_seed=42):
         """
