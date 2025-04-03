@@ -1,0 +1,11 @@
+Model Type,Aggregate Diversity
+user_item_bias,0.000241103
+user_based_cf,0.053476709
+ring_buffer_random,0.002063274
+ring_buffer_time,0.001719395
+most_popular_random,0.001719395
+most_popular_time,0.001719395
+user_based_cf,0.053476709
+content based,0.003520108
+item based CF,0.0
+item based CF,0.053958915999614235

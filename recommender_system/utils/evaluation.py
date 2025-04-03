@@ -221,7 +221,7 @@ def find_recommend_function(model: Any) -> Callable:
     else:
         raise ValueError("Model must have a 'recommend' or 'recommend_n_articles' method.")
 
-def aggregate_diversity(model, item_df, k=5, user_sample=None, random_seed=42):
+def aggregate_diversity(model, item_df, users_df, k=5, user_sample=None, random_seed=42):
     """
     Compute the aggregate diversity (catalog coverage) of the recommendations.
 
@@ -248,17 +248,16 @@ def aggregate_diversity(model, item_df, k=5, user_sample=None, random_seed=42):
     """
     np.random.seed(random_seed)
 
+    if users_df is not None: 
+        user_ids = users_df
     # Determine user ids from various model attributes.
-    if hasattr(model, "user_to_index"):
+    elif hasattr(model, "user_to_index"):
         user_ids = list(model.user_to_index.keys())
     elif hasattr(model, "user_id_to_index"):
         user_ids = list(model.user_id_to_index.keys())
     elif hasattr(model, "user_similarity_matrix"):
         # Use keys from user_similarity_matrix for user-based CF models.
         user_ids = list(model.user_similarity_matrix.keys())
-    elif hasattr(model, "item_similarity_matrix"):
-        # Use keys from item_similarity_matrix for item-based CF models.
-        user_ids = list(model.item_similarity_matrix.keys())
     elif hasattr(model, "user_ids"):
         user_ids = model.user_ids
     else:
@@ -320,7 +319,7 @@ def append_aggregate_diversity(aggregate_diversity: float, model_type: str) -> N
             "Aggregate Diversity": aggregate_diversity
         })
 
-def gini_coefficient(self, k=5, user_sample=None, random_seed=42):
+def gini_coefficient(self, users_ids_df, k=5, user_sample=None, random_seed=42):
     """
     Compute the Gini coefficient to measure the concentration of recommendations.
 
@@ -346,7 +345,8 @@ def gini_coefficient(self, k=5, user_sample=None, random_seed=42):
         The Gini coefficient of item recommendation distribution.
     """
     np.random.seed(random_seed)
-    user_ids = np.array(self.user_ids)
+
+    user_ids = users_ids_df
 
     if user_sample is not None and user_sample < len(user_ids):
         print("Sampling users")

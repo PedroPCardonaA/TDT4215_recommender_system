@@ -3,4 +3,3 @@ data/document_vector.parquet
 generated_data/
 .idea/
 emissions.csv
-output/
