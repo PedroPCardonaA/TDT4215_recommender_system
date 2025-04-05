@@ -33,12 +33,7 @@ def perform_model_evaluation(model: Any, test_data: pl.DataFrame, k: int = 5) ->
         A dictionary with average precision@k, recall@k, and FPR@k.
     """
     # Determine the recommendation function.
-    if hasattr(model, "recommend"):
-        rec_func = model.recommend
-    elif hasattr(model, "recommend_n_articles"):
-        rec_func = model.recommend_n_articles
-    else:
-        raise ValueError("Model must have a 'recommend' or 'recommend_n_articles' method.")
+    rec_func = find_recommend_function(model)
 
     # Candidate set: all unique article IDs in test_data.
     candidate_set = set(test_data.select("article_id").unique().to_numpy().flatten())
@@ -199,13 +194,12 @@ def track_model_energy(model: Any, model_name: str, user_id: int, n: int = 5) ->
     # Track the energy consumption of the .fit() method.
     fit_result, fit_emissions = record_carbon_footprint("fit", model_name, model.fit)
     
-    # Determine which recommendation method to use.
-    if hasattr(model, "recommend"):
-        rec_func = model.recommend
-    elif hasattr(model, "recommend_n_articles"):
-        rec_func = model.recommend_n_articles
-    else:
-        raise ValueError("Model must have a 'recommend' or 'recommend_n_articles' method.")
+    try:
+        # Determine the recommendation function.
+        rec_func = find_recommend_function(model)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return {"fit": (fit_result, fit_emissions), "recommend": None}
     
     # Track the energy consumption of the recommendation method.
     recommend_result, recommend_emissions = record_carbon_footprint("recommend", model_name, rec_func, user_id, n=n)
@@ -214,3 +208,236 @@ def track_model_energy(model: Any, model_name: str, user_id: int, n: int = 5) ->
         "fit": (fit_result, fit_emissions),
         "recommend": (recommend_result, recommend_emissions)
     }
+
+def find_recommend_function(model: Any) -> Callable:
+    """
+    Determine the recommendation function to use based on the model's attributes.
+    Helper method
+    """
+    if hasattr(model, "recommend"):
+        return model.recommend
+    elif hasattr(model, "recommend_n_articles"):
+        return model.recommend_n_articles
+    else:
+        raise ValueError("Model must have a 'recommend' or 'recommend_n_articles' method.")
+
+def aggregate_diversity(model, item_df, users_df, k=5, user_sample=None, random_seed=42):
+    """
+    Compute the aggregate diversity (catalog coverage) of the recommendations.
+
+    The metric measures the fraction of the total catalog that has been recommended
+    across all users.
+
+    Parameters
+    ----------
+    model : Any
+        A recommender model with a recommend(user_id, n) or recommend_n_articles(user_id, n) method.
+    item_df : pl.DataFrame
+        DataFrame containing at least the "article_id" column (the full catalog of items).
+    k : int, optional
+        Number of top recommendations per user (default is 5).
+    user_sample : int, optional
+        Number of users to sample for evaluation (if None, all users are evaluated).
+    random_seed : int, optional
+        Seed for reproducibility when sampling users (default is 42).
+
+    Returns
+    -------
+    float
+        The aggregate diversity as the fraction of the catalog that is recommended.
+    """
+    np.random.seed(random_seed)
+
+    if users_df is not None: 
+        user_ids = users_df
+    # Determine user ids from various model attributes.
+    elif hasattr(model, "user_to_index"):
+        user_ids = list(model.user_to_index.keys())
+    elif hasattr(model, "user_id_to_index"):
+        user_ids = list(model.user_id_to_index.keys())
+    elif hasattr(model, "user_similarity_matrix"):
+        # Use keys from user_similarity_matrix for user-based CF models.
+        user_ids = list(model.user_similarity_matrix.keys())
+    elif hasattr(model, "user_ids"):
+        user_ids = model.user_ids
+    else:
+        # Fallback: extract unique user ids from the provided item_df.
+        user_ids = item_df.select("user_id").unique().to_numpy().flatten()
+
+    users = np.array(user_ids)
+    rec_func = find_recommend_function(model)
+
+    if user_sample is not None and user_sample < len(users):
+        users = np.random.choice(users, size=user_sample, replace=False)
+
+    recommended_items = set()
+    for user_id in users:
+        recommended_items.update(rec_func(user_id, n=k))
+
+    total_items = set(item_df["article_id"].to_numpy())
+    diversity = len(recommended_items) / len(total_items) if total_items else 0.0
+
+    return diversity
+
+# Appends the aggregate diversity metric to the CSV file.
+def append_aggregate_diversity(aggregate_diversity: float, model_type: str) -> None:
+    """
+    Append the aggregate diversity metric for any model to CSV file in the output/evaluation_summary
+    folder.
+    If the file doesn't exist, it will be created and the header will be written.
+    
+    Parameters
+    ----------
+
+    aggregate_diversity : float
+        The aggregate diversity metric to append.
+    model_type : str
+        A string representing the type or name of the model being evaluated.
+    """
+    # Create the output/evaluation_summary directory if it doesn't exist.
+    output_dir = os.path.join("output", "evaluation_summary")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Define the CSV file path.
+    file_path = os.path.join(output_dir, "model_overview_diversity.csv")
+    
+    # Check if file exists to decide if header should be written.
+    file_exists = os.path.isfile(file_path)
+    
+    # Open the file in append mode.
+    with open(file_path, mode="a", newline="") as csv_file:
+        fieldnames = ["Model Type", "Aggregate Diversity"]
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        
+        # If file is new, write the header.
+        if not file_exists:
+            writer.writeheader()
+        
+        # Write the new row with the provided metrics.
+        writer.writerow({
+            "Model Type": model_type,
+            "Aggregate Diversity": aggregate_diversity
+        })
+
+def gini_coefficient(model, users_ids_df, articles_ids_df, k=5, user_sample=None, random_seed=42):
+    """
+    Compute the Gini coefficient to measure the concentration of recommendations.
+
+    A Gini coefficient of 0 means that recommendations are equally distributed across items,
+    whereas a Gini coefficient closer to 1 means that recommendations are highly concentrated
+    on a small number of items (i.e., strong popularity bias).
+
+    This version computes counts over the entire catalog, assigning 0 to items that were never recommended.
+
+    Parameters
+    ----------
+    model : Any
+        A recommender model with a recommend(user_id, n) or recommend_n_articles(user_id, n) method.
+    users_ids_df : array-like
+        A list or array of user IDs.
+    articles_ids_df : pl.DataFrame or pl.Series
+        The full catalog of items. If a Series is provided, it will be converted to a DataFrame.
+    k : int, optional
+        Number of top recommendations per user (default is 5).
+    user_sample : int, optional
+        Number of users to sample for evaluation (if None, all users are evaluated).
+    random_seed : int, optional
+        Seed for reproducibility when sampling users (default is 42).
+
+    Returns
+    -------
+    float
+        The Gini coefficient of item recommendation distribution.
+    """
+    # Set the random seed for reproducibility.
+    np.random.seed(random_seed)
+
+    # Utilize the provided list of user IDs.
+    user_ids = users_ids_df
+
+    # Sample a subset of users if requested.
+    if user_sample is not None and user_sample < len(user_ids):
+        print("Sampling users")
+        user_ids = np.random.choice(user_ids, size=user_sample, replace=False)
+
+    # Utilize the recommendation function from the model.
+    rec_func = find_recommend_function(model)
+
+    recommended_items = []
+    for user_id in user_ids:
+        recommended_items.extend(rec_func(user_id, n=k))
+
+    print("Computing Gini coefficient")
+    print(recommended_items)
+    
+    # Return 0 if no items were recommended.
+    if not recommended_items:
+        return 0.0 
+
+    # Create a DataFrame with counts for recommended items.
+    rec_counts = pl.DataFrame({"article_id": recommended_items}) \
+        .group_by("article_id") \
+        .agg(pl.len().alias("count"))
+    
+    # Convert articles_ids_df to a DataFrame if it's a Series.
+    if isinstance(articles_ids_df, pl.Series):
+        articles_ids_df = articles_ids_df.to_frame(name="article_id")
+    elif not isinstance(articles_ids_df, pl.DataFrame):
+        # Convert lists or other iterables to a DataFrame.
+        articles_ids_df = pl.DataFrame({"article_id": list(articles_ids_df)})
+    
+    # Left join the recommendation counts with the full catalog and fill missing counts with 0.
+    full_counts = articles_ids_df.join(rec_counts, on="article_id", how="left").fill_null(0)
+    
+    # Sort the counts in ascending order as required for the Gini coefficient calculation.
+    full_counts = full_counts.sort("count")
+    
+    counts = np.array(full_counts["count"].to_list(), dtype=np.float64)
+    n = len(counts)
+    
+    # Return 0 if there are no counts.
+    if n == 0 or np.sum(counts) == 0:
+        return 0.0  
+
+    index = np.arange(1, n + 1)
+    gini = (np.sum((2 * index - n - 1) * counts)) / (n * np.sum(counts))
+    
+    return gini
+
+def append_gini_coefficient(gini: float, model_type: str) -> None:
+    """
+    Append the Gini coefficient metric for any model to a CSV file in the output/evaluation_summary folder.
+    If the file does not exist, create it and write the header.
+    
+    Parameters
+    ----------
+    gini : float
+        The Gini coefficient value to append.
+    model_type : str
+        A string representing the type or name of the model being evaluated.
+    """
+    # Create the output/evaluation_summary directory if it does not exist.
+    output_dir = os.path.join("output", "evaluation_summary")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Define the CSV file path for the Gini coefficient.
+    file_path = os.path.join(output_dir, "model_overview_gini.csv")
+    
+    # Check if the CSV file already exists to determine if a header is needed.
+    file_exists = os.path.isfile(file_path)
+    
+    # Open the CSV file in append mode.
+    with open(file_path, mode="a", newline="") as csv_file:
+        # Define the fieldnames for the CSV.
+        fieldnames = ["Model Type", "Gini Coefficient"]
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        
+        # Write the header if the file is new.
+        if not file_exists:
+            writer.writeheader()
+        
+        # Write the new row with the provided model type and Gini coefficient.
+        writer.writerow({
+            "Model Type": model_type,
+            "Gini Coefficient": gini
+        })
