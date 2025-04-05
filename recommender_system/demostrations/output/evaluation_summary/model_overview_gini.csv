@@ -6,3 +6,8 @@ item based CF,0.9707553150604554
 bias baseline,0.9970980847359258
 user_based_cf,0.9725062558536772
 item based CF,0.9707512863946661
+most_popular_random,0.9997588967113511
+most_popular_user_CF_hybrid,0.9840937409586267
+cosine_model,0.9747912431285563
+cosine_model,0.9747912431285563
+most_popular_user_CF_hybrid,0.984621390683769

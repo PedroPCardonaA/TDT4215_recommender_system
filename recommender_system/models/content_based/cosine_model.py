@@ -115,7 +115,7 @@ class CosineModel:
         })
         return rec_df.sort("score", descending=True)
 
-    def train(self):
+    def fit(self):
         """
         Precompute and store the recommendation scores for every user in the training set.
         The result is stored in self.scored_df as a dictionary mapping user_id to their scored DataFrame.
@@ -136,11 +136,11 @@ class CosineModel:
         else:
             return self._compute_user_scores(user_id).head(top_k)
 
-    def recommend(self, user_id: int, top_k: int) -> list:
+    def recommend(self, user_id: int, n: int) -> list:
         """
         Returns a list of top_k recommended article IDs for the given user.
         """
-        scores_df = self.get_scores(user_id, top_k)
+        scores_df = self.get_scores(user_id, n)
         return scores_df["article_id"].to_list()
     
 
@@ -162,7 +162,7 @@ class CosineModel:
             Dictionary with keys "MAP@K" and "NDCG@K" corresponding to the average scores.
         """
         # Group test_behavior by user_id once
-        grouped = test_behavior.groupby("user_id").agg(pl.col("article_id").list())
+        grouped = test_behavior.group_by("user_id").agg(pl.col("article_id").list())
         test_dict = {row["user_id"]: set(row["article_id"]) for row in grouped.to_dicts()}
 
         def evaluate_user(uid, relevant_items):
